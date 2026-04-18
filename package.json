@@ -32,6 +32,7 @@
     "example:merged-table": "bun run examples/merged-table-pagination.ts",
     "example:wide-table": "bun run examples/wide-table-pagination.ts",
     "example:alignment": "bun run examples/alignment-controls.ts",
+    "example:transform": "bun run examples/transform-controls.ts",
     "bench": "bun --expose-gc run examples/bench-table.ts",
     "smoke": "bun run examples/smoke.ts",
     "test:fonts": "bun run examples/test-google-fonts.ts"

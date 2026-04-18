@@ -45,6 +45,7 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 - table CSS: `border`, `border-width`, `border-color`, `padding`, `border-collapse: collapse`
 - row and cell CSS: `background-color`, `color`, `font-size`, `font-weight`, `text-align`, `vertical-align`, `height`, `min-height`
 - cell image CSS: `width`, `height`, `object-fit`, `object-position`
+- cross-platform image transforms: `transform`, `transform-origin`, `-webkit-transform`, `-webkit-transform-origin`, `opacity`
 - image support for PNG, JPEG, SVG, data URLs, local files, and HTTP(S) URLs
 - PNG/JPEG natural aspect-ratio handling when only width or height is provided
 - text and image watermarks
@@ -282,6 +283,9 @@ The CSS support is intentionally pragmatic:
 - `height`, `min-height` for table rows and cells
 - `object-fit: contain`, `object-fit: cover`, `object-fit: fill` for images in table cells
 - `object-position` keywords such as `left top`, `center center`, `right bottom`
+- `opacity` for images
+- `transform` and `-webkit-transform` for images: `rotate`, `scale`, `scaleX`, `scaleY`, `translate`, `translateX`, `translateY`
+- `transform-origin` and `-webkit-transform-origin` for image transforms
 - `display: none`
 - `visibility: hidden`
 - `page-break-before`, `page-break-after`, `break-before`, `break-after`
@@ -365,6 +369,23 @@ td.logo img {
   object-position: center center;
 }
 ```
+
+Images can be transformed without relying on a browser engine:
+
+```css
+td.mirror img {
+  transform: scaleX(-1);
+  transform-origin: center center;
+}
+
+td.apple-template img {
+  -webkit-transform: rotate(-18deg) scale(1.1);
+  -webkit-transform-origin: center center;
+  opacity: 0.65;
+}
+```
+
+The `-webkit-*` aliases are parsed for Safari/Apple-authored templates, but the render path is the same cross-platform PDF transform engine on Windows, Linux, macOS, and Bun runtimes.
 
 For merged table cells, the renderer groups rows connected by `rowspan` and keeps that group on one page whenever it fits on a fresh page. A section row immediately before a rowspan group, such as `<tr><td colspan="5">Section</td></tr>`, is kept with that group too. If the merged group is taller than a fresh page, Html2PdfSmith renders it sequentially and emits a warning instead of silently hiding the edge case.
 
@@ -504,6 +525,7 @@ bun run example:page-wrap-repeat
 bun run example:merged-table
 bun run example:wide-table
 bun run example:alignment
+bun run example:transform
 bun run example:document
 bun run bench -- 10 100 --watermark
 ```

@@ -65,6 +65,7 @@ CSS support is intentionally pragmatic. The renderer recognizes common class nam
 - row-level `background-color`, `color`, `font-size`, and `text-align`
 - row/cell `height`, `min-height`, and `vertical-align`
 - cell image `width`, `height`, `object-fit`, and `object-position`
+- image `opacity`, `transform`, `transform-origin`, and `-webkit-transform` aliases
 - block `margin`, `padding`, and `border`
 - `line-height`
 - `text-decoration`

@@ -199,6 +199,33 @@ if (alignmentLoaded.getPageCount() !== alignment.pages) {
 }
 console.log({ name: "alignment-controls", pages: alignment.pages, bytes: alignment.pdf.byteLength, warnings: alignment.warnings.length });
 
+const transformIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="8" y="8" width="48" height="48" rx="9" fill="#0f766e"/><path d="M18 32h22" stroke="#fff" stroke-width="7" stroke-linecap="round"/><path d="M36 20l12 12-12 12" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>`)}`;
+const transforms = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    table { width: 100%; border-collapse: collapse; }
+    td { border: 1px solid #bbb; padding: 8px; height: 72px; text-align: center; vertical-align: middle; }
+    img { width: 30px; height: 30px; object-fit: contain; transform-origin: center center; }
+    .mirror img { transform: scaleX(-1); }
+    .rotate img { -webkit-transform: rotate(20deg) scale(1.1); -webkit-transform-origin: center center; }
+    .faded img { opacity: 0.4; transform: translate(6px, -3px); }
+  </style></head><body>
+    <table><tbody><tr>
+      <td><img src="${transformIcon}"></td>
+      <td class="mirror"><img src="${transformIcon}"></td>
+      <td class="rotate"><img src="${transformIcon}"></td>
+      <td class="faded"><img src="${transformIcon}"></td>
+    </tr></tbody></table>
+    <img style="width: 40px; height: 40px; transform: rotate(-15deg); opacity: .6" src="${transformIcon}">
+  </body></html>`,
+  hideHeader: true,
+  resourcePolicy: { allowData: true },
+});
+const transformsLoaded = await PDFDocument.load(transforms.pdf);
+if (transformsLoaded.getPageCount() !== transforms.pages) {
+  throw new Error("transforms: reported page count mismatch");
+}
+console.log({ name: "transform-controls", pages: transforms.pages, bytes: transforms.pdf.byteLength, warnings: transforms.warnings.length });
+
 await assertPdf("document-blocks", `<!doctype html><html><body>
   <style>
     .quote { background-color: #f6f8fa; border-color: #94a3b8; }
