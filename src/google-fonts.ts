@@ -9,7 +9,7 @@
  * (or `LOCALAPPDATA/html2pdfsmith/fonts/` on Windows)
  */
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
@@ -18,6 +18,9 @@ import type { WarningSink } from "./warnings";
 /* ---------- cache location ---------- */
 
 function cacheDir(): string {
+  if (process.env.HTML2PDFSMITH_CACHE_DIR) {
+    return join(process.env.HTML2PDFSMITH_CACHE_DIR, "fonts");
+  }
   const os = platform();
   if (os === "win32") {
     return join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "html2pdfsmith", "fonts");
@@ -42,21 +45,21 @@ function slugify(family: string): string {
 /* ---------- CSS API ---------- */
 
 /**
- * The Google Fonts CSS2 API returns a stylesheet with `@font-face` rules.
- * We request `.ttf` by spoofing a user-agent that only supports TrueType.
+ * The legacy Google Fonts CSS API can return TrueType URLs directly.
  * This keeps the font files small and universally compatible with PDFKit.
  */
-const CSS_API = "https://fonts.googleapis.com/css2";
-const TTF_USER_AGENT = "Mozilla/4.0 (compatible; MSIE 8.0)"; // forces .ttf
+const CSS_API = "https://fonts.googleapis.com/css";
+const TTF_USER_AGENT = "Mozilla/5.0";
 
 interface FontVariant {
+  style: string;
   weight: string;
   url: string;
 }
 
 async function fetchCssAndParseUrls(family: string, weights: string[]): Promise<FontVariant[]> {
   const params = new URLSearchParams({
-    family: `${family}:wght@${weights.join(";")}`,
+    family: `${family}:${weights.join(",")},400italic,700italic`,
     display: "swap",
   });
   const response = await fetch(`${CSS_API}?${params}`, {
@@ -74,8 +77,10 @@ async function fetchCssAndParseUrls(family: string, weights: string[]): Promise<
   for (const block of blocks) {
     const urlMatch = /url\(([^)]+)\)/i.exec(block);
     const weightMatch = /font-weight:\s*(\d+)/i.exec(block);
+    const styleMatch = /font-style:\s*([a-z]+)/i.exec(block);
     if (urlMatch?.[1]) {
       variants.push({
+        style: styleMatch?.[1] ?? "normal",
         weight: weightMatch?.[1] ?? "400",
         url: urlMatch[1].replace(/['"]/g, ""),
       });
@@ -86,10 +91,35 @@ async function fetchCssAndParseUrls(family: string, weights: string[]): Promise<
 
 /* ---------- download with disk cache ---------- */
 
+function isSupportedFontBytes(bytes: Uint8Array): boolean {
+  if (bytes.length < 4) return false;
+  const b0 = bytes[0];
+  const b1 = bytes[1];
+  const b2 = bytes[2];
+  const b3 = bytes[3];
+  return (
+    b0 === 0x00 && b1 === 0x01 && b2 === 0x00 && b3 === 0x00 ||
+    b0 === 0x4f && b1 === 0x54 && b2 === 0x54 && b3 === 0x4f ||
+    b0 === 0x74 && b1 === 0x72 && b2 === 0x75 && b3 === 0x65 ||
+    b0 === 0x74 && b1 === 0x74 && b2 === 0x63 && b3 === 0x66
+  );
+}
+
+function isSupportedFontFile(path: string): boolean {
+  try {
+    return isSupportedFontBytes(readFileSync(path).subarray(0, 4));
+  } catch {
+    return false;
+  }
+}
+
 async function downloadToCache(url: string, dest: string): Promise<void> {
   const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`HTTP ${response.status} downloading font`);
   const bytes = new Uint8Array(await response.arrayBuffer());
+  if (!isSupportedFontBytes(bytes)) {
+    throw new Error("Google Fonts returned a non-TTF/OTF font format that PDFKit cannot register");
+  }
   await writeFile(dest, bytes);
 }
 
@@ -99,6 +129,8 @@ interface CacheManifest {
   family: string;
   regular: string;
   bold: string;
+  italic?: string;
+  boldItalic?: string;
   cachedAt: string;
 }
 
@@ -121,6 +153,8 @@ async function writeManifest(dir: string, slug: string, manifest: CacheManifest)
 export interface GoogleFontPaths {
   regularPath: string;
   boldPath: string;
+  italicPath?: string;
+  boldItalicPath?: string;
 }
 
 /**
@@ -148,11 +182,23 @@ export async function resolveGoogleFont(
 
   const regularFile = join(dir, `${slug}-regular.ttf`);
   const boldFile = join(dir, `${slug}-bold.ttf`);
+  const italicFile = join(dir, `${slug}-italic.ttf`);
+  const boldItalicFile = join(dir, `${slug}-bold-italic.ttf`);
 
   // Check manifest for existing cache
   const manifest = await readManifest(dir, slug);
-  if (manifest && existsSync(regularFile) && existsSync(boldFile)) {
-    return { regularPath: regularFile, boldPath: boldFile };
+  if (
+    manifest &&
+    existsSync(regularFile) &&
+    existsSync(boldFile) &&
+    existsSync(italicFile) &&
+    existsSync(boldItalicFile) &&
+    isSupportedFontFile(regularFile) &&
+    isSupportedFontFile(boldFile) &&
+    isSupportedFontFile(italicFile) &&
+    isSupportedFontFile(boldItalicFile)
+  ) {
+    return { regularPath: regularFile, boldPath: boldFile, italicPath: italicFile, boldItalicPath: boldItalicFile };
   }
 
   // Download from Google Fonts
@@ -163,22 +209,28 @@ export async function resolveGoogleFont(
       return null;
     }
 
-    const regular = variants.find((v) => v.weight === "400") ?? variants[0]!;
-    const bold = variants.find((v) => v.weight === "700") ?? regular;
+    const regular = variants.find((v) => v.style === "normal" && v.weight === "400") ?? variants.find((v) => v.weight === "400") ?? variants[0]!;
+    const bold = variants.find((v) => v.style === "normal" && v.weight === "700") ?? variants.find((v) => v.weight === "700") ?? regular;
+    const italic = variants.find((v) => v.style === "italic" && v.weight === "400") ?? regular;
+    const boldItalic = variants.find((v) => v.style === "italic" && v.weight === "700") ?? bold ?? italic;
 
     await Promise.all([
       downloadToCache(regular.url, regularFile),
       downloadToCache(bold.url, boldFile),
+      downloadToCache(italic.url, italicFile),
+      downloadToCache(boldItalic.url, boldItalicFile),
     ]);
 
     await writeManifest(dir, slug, {
       family,
       regular: `${slug}-regular.ttf`,
       bold: `${slug}-bold.ttf`,
+      italic: `${slug}-italic.ttf`,
+      boldItalic: `${slug}-bold-italic.ttf`,
       cachedAt: new Date().toISOString(),
     });
 
-    return { regularPath: regularFile, boldPath: boldFile };
+    return { regularPath: regularFile, boldPath: boldFile, italicPath: italicFile, boldItalicPath: boldItalicFile };
   } catch (error) {
     warnings.add("google_font_download_failed", `Failed to download Google Font "${family}": ${String(error)}`);
     return null;

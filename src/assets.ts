@@ -79,7 +79,7 @@ export async function embedImage(
   }
 }
 
-export function discoverFontPaths(): { regularPath?: string; boldPath?: string } {
+export function discoverFontPaths(): { regularPath?: string; boldPath?: string; italicPath?: string; boldItalicPath?: string } {
   const candidates = [
     {
       regularPath: "C:/Windows/Fonts/NotoSansSC-VF.ttf",
@@ -109,7 +109,7 @@ export function discoverFontPaths(): { regularPath?: string; boldPath?: string }
 
   for (const item of candidates) {
     if (existsSync(item.regularPath)) {
-      const result: { regularPath?: string; boldPath?: string } = { regularPath: item.regularPath };
+      const result: { regularPath?: string; boldPath?: string; italicPath?: string; boldItalicPath?: string } = { regularPath: item.regularPath };
       if (existsSync(item.boldPath)) result.boldPath = item.boldPath;
       return result;
     }
@@ -136,13 +136,17 @@ export async function loadFontBytes(pathOrBytes: string | Uint8Array | undefined
 export async function resolveFontPaths(
   fontOptions: PdfFontOptions | undefined,
   warnings: WarningSink,
-): Promise<{ regularPath?: string; boldPath?: string }> {
+): Promise<{ regularPath?: string; boldPath?: string; italicPath?: string; boldItalicPath?: string }> {
   // 1. Explicit paths take priority
   if (fontOptions?.regularPath || fontOptions?.regularBytes) {
-    const result: { regularPath?: string; boldPath?: string } = {};
+    const result: { regularPath?: string; boldPath?: string; italicPath?: string; boldItalicPath?: string } = {};
     if (fontOptions.regularPath) result.regularPath = fontOptions.regularPath;
     const bp = fontOptions.boldPath ?? fontOptions.regularPath;
     if (bp) result.boldPath = bp;
+    const ip = fontOptions.italicPath ?? fontOptions.regularPath;
+    if (ip) result.italicPath = ip;
+    const bip = fontOptions.boldItalicPath ?? fontOptions.boldPath ?? fontOptions.italicPath ?? fontOptions.regularPath;
+    if (bip) result.boldItalicPath = bip;
     return result;
   }
 

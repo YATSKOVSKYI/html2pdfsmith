@@ -2,10 +2,10 @@ import { parseDocument } from "htmlparser2";
 import type { AnyNode, Element } from "domhandler";
 import { DomUtils } from "htmlparser2";
 import { parseCssRules, resolveElementStyle, type CssRule } from "./css";
-import type { ParsedBlock, ParsedCell, ParsedDocument, ParsedRow, ParsedTable } from "./types";
+import type { ParsedBlock, ParsedCell, ParsedDocument, ParsedInlineSegment, ParsedRow, ParsedTable } from "./types";
 
 function isElement(node: AnyNode | null | undefined): node is Element {
-  return !!node && node.type === "tag";
+  return !!node && (node.type === "tag" || node.type === "style" || node.type === "script");
 }
 
 function attr(el: Element, name: string): string {
@@ -27,7 +27,15 @@ function findFirst(root: AnyNode | AnyNode[], predicate: (el: Element) => boolea
 
 function findAll(root: AnyNode | AnyNode[], predicate: (el: Element) => boolean): Element[] {
   const nodes = Array.isArray(root) ? root : [root];
-  return DomUtils.findAll((node) => isElement(node) && predicate(node), nodes) as Element[];
+  const found: Element[] = [];
+  const visit = (node: AnyNode): void => {
+    if (isElement(node) && predicate(node)) found.push(node);
+    if ("children" in node && node.children) {
+      for (const child of node.children) visit(child);
+    }
+  };
+  for (const node of nodes) visit(node);
+  return found;
 }
 
 function directElementChildren(el: Element, tagName?: string): Element[] {
@@ -46,6 +54,13 @@ function normalizeWhitespace(value: string): string {
     .trim();
 }
 
+function normalizePreText(value: string): string {
+  return value
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/^\n+|\n+$/g, "");
+}
+
 function textWithBreaks(node: AnyNode): string {
   if (node.type === "text") return node.data ?? "";
   if (!("children" in node) || !node.children) return "";
@@ -60,6 +75,77 @@ function textWithBreaks(node: AnyNode): string {
     }
   }
   return out;
+}
+
+function preText(node: AnyNode): string {
+  if (node.type === "text") return node.data ?? "";
+  if (!("children" in node) || !node.children) return "";
+  if (isElement(node) && node.name.toLowerCase() === "br") return "\n";
+  return node.children.map((child) => preText(child)).join("");
+}
+
+function mergeStyle(base: Record<string, string>, next: Record<string, string>): Record<string, string> {
+  return { ...base, ...next };
+}
+
+function sameInlineStyle(a: ParsedInlineSegment, b: ParsedInlineSegment): boolean {
+  if (a.href !== b.href) return false;
+  const aEntries = Object.entries(a.styles);
+  const bEntries = Object.entries(b.styles);
+  if (aEntries.length !== bEntries.length) return false;
+  return aEntries.every(([key, value]) => b.styles[key] === value);
+}
+
+function normalizeInlineSegments(segments: ParsedInlineSegment[]): ParsedInlineSegment[] {
+  const normalized: ParsedInlineSegment[] = [];
+  for (const segment of segments) {
+    const text = segment.text.replace(/\u00a0/g, " ").replace(/[ \t\r\f\v\n]+/g, " ");
+    if (!text) continue;
+    const previous = normalized[normalized.length - 1];
+    if (previous && sameInlineStyle(previous, segment)) {
+      previous.text += text;
+    } else {
+      const next: ParsedInlineSegment = { text, styles: segment.styles };
+      if (segment.href) next.href = segment.href;
+      normalized.push(next);
+    }
+  }
+
+  if (normalized[0]) normalized[0].text = normalized[0].text.trimStart();
+  const last = normalized[normalized.length - 1];
+  if (last) last.text = last.text.trimEnd();
+  return normalized.filter((segment) => segment.text);
+}
+
+function parseInlineSegments(node: AnyNode, rules: CssRule[], inherited: Record<string, string> = {}): ParsedInlineSegment[] {
+  if (node.type === "text") {
+    const text = node.data ?? "";
+    return text ? [{ text, styles: inherited }] : [];
+  }
+  if (!("children" in node) || !node.children) return [];
+  if (isElement(node) && node.name.toLowerCase() === "br") return [{ text: "\n", styles: inherited }];
+
+  let style = inherited;
+  let href: string | undefined;
+  if (isElement(node)) {
+    const name = node.name.toLowerCase();
+    style = mergeStyle(inherited, resolveElementStyle(node, rules));
+    if (name === "strong" || name === "b") style = mergeStyle(style, { "font-weight": "700" });
+    if (name === "em" || name === "i") style = mergeStyle(style, { "font-style": "italic" });
+    if (name === "u") style = mergeStyle(style, { "text-decoration": "underline" });
+    if (name === "s" || name === "del") style = mergeStyle(style, { "text-decoration": "line-through" });
+    if (name === "code") style = mergeStyle(style, { "font-family": "monospace", "background-color": style["background-color"] ?? "#f6f8fa" });
+    if (style["display"]?.trim().toLowerCase() === "none" || style["visibility"]?.trim().toLowerCase() === "hidden") return [];
+    if (name === "a") href = attr(node, "href").trim() || undefined;
+  }
+
+  const segments = node.children.flatMap((child) => parseInlineSegments(child, rules, style));
+  if (!href) return segments;
+  return segments.map((segment) => ({ ...segment, href: segment.href ?? href }));
+}
+
+function inlineText(segments: ParsedInlineSegment[]): string {
+  return normalizeWhitespace(segments.map((segment) => segment.text).join(""));
 }
 
 function firstImageSrc(el: Element): string | undefined {
@@ -77,7 +163,8 @@ function parseCell(el: Element, rules: CssRule[]): ParsedCell {
   const cls = className(el);
   const style = attr(el, "style");
   const styles = resolveElementStyle(el, rules);
-  const text = normalizeWhitespace(textWithBreaks(el));
+  const inlines = normalizeInlineSegments(parseInlineSegments(el, rules, styles));
+  const text = inlineText(inlines) || normalizeWhitespace(textWithBreaks(el));
   const lower = `${cls} ${style} ${Object.entries(styles).map(([k, v]) => `${k}:${v}`).join(";")}`.toLowerCase();
   const isHeader = el.name.toLowerCase() === "th";
   const isPrice = /\bprice\b/.test(cls) || lower.includes("data-price");
@@ -87,6 +174,7 @@ function parseCell(el: Element, rules: CssRule[]): ParsedCell {
 
   const cell: ParsedCell = {
     text,
+    inlines,
     className: cls,
     style,
     styles,
@@ -105,6 +193,7 @@ function parseCell(el: Element, rules: CssRule[]): ParsedCell {
 }
 
 function parseRow(el: Element, fallbackKind: ParsedRow["kind"], rules: CssRule[]): ParsedRow {
+  const styles = resolveElementStyle(el, rules);
   const cells = directElementChildren(el).filter((child) => {
     const name = child.name.toLowerCase();
     return name === "td" || name === "th";
@@ -118,7 +207,7 @@ function parseRow(el: Element, fallbackKind: ParsedRow["kind"], rules: CssRule[]
   if (hasSection) kind = "section";
   else if (hasPrice) kind = "price";
 
-  return { cells, kind };
+  return { cells, kind, styles };
 }
 
 function maxColumns(rows: ParsedRow[]): number {
@@ -143,6 +232,7 @@ function normalizeRowspans(rows: ParsedRow[], columnCount: number): ParsedRow[] 
         const placeholder: ParsedCell = {
           ...cellWithoutImage,
           text: "",
+          inlines: [],
           colspan: 1,
           rowspan: 1,
           isSpanPlaceholder: true,
@@ -158,6 +248,7 @@ function normalizeRowspans(rows: ParsedRow[], columnCount: number): ParsedRow[] 
       if (!source) {
         cells.push({
           text: "",
+          inlines: [],
           className: "",
           style: "",
           styles: {},
@@ -200,12 +291,16 @@ function parseTable(tableEl: Element, rules: CssRule[]): ParsedTable {
   const bodyRows = tbody
     ? directElementChildren(tbody, "tr").map((row) => parseRow(row, "body", rules))
     : directElementChildren(tableEl, "tr").map((row) => parseRow(row, "body", rules));
+  const tfoot = findFirst(tableEl, (el) => el.name.toLowerCase() === "tfoot");
+  const footRows = tfoot
+    ? directElementChildren(tfoot, "tr").map((row) => parseRow(row, "body", rules))
+    : [];
 
-  const columnCount = Math.max(1, maxColumns([...headRows, ...bodyRows]));
+  const columnCount = Math.max(1, maxColumns([...headRows, ...bodyRows, ...footRows]));
 
   return {
     headRows: normalizeRowspans(headRows, columnCount),
-    bodyRows: normalizeRowspans(bodyRows, columnCount),
+    bodyRows: normalizeRowspans([...bodyRows, ...footRows], columnCount),
     columnCount,
   };
 }
@@ -224,6 +319,13 @@ function bodyChildren(roots: AnyNode[]): AnyNode[] {
 function parseFlowBlocks(nodes: AnyNode[], rules: CssRule[], blocks: ParsedBlock[] = []): ParsedBlock[] {
   let listStack: Array<{ ordered: boolean; index: number }> = [];
 
+  const isHidden = (style: Record<string, string>) =>
+    style["display"]?.trim().toLowerCase() === "none" || style["visibility"]?.trim().toLowerCase() === "hidden";
+  const isPageBreak = (value: string | undefined) => {
+    const v = value?.trim().toLowerCase();
+    return v === "always" || v === "page" || v === "left" || v === "right";
+  };
+
   const visit = (node: AnyNode): void => {
     if (!isElement(node)) return;
     const name = node.name.toLowerCase();
@@ -231,27 +333,53 @@ function parseFlowBlocks(nodes: AnyNode[], rules: CssRule[], blocks: ParsedBlock
     if (hasClass(node, "contact-card") || hasClass(node, "brand-name") || name === "header") return;
 
     const style = resolveElementStyle(node, rules);
+    if (isHidden(style)) return;
+    if (isPageBreak(style["page-break-before"]) || isPageBreak(style["break-before"])) {
+      blocks.push({ type: "page-break", style });
+    }
+
     if (name === "table") {
       blocks.push({ type: "table", table: parseTable(node, rules), style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
       return;
     }
     if (/^h[1-6]$/.test(name)) {
-      const text = normalizeWhitespace(textWithBreaks(node));
-      if (text) blocks.push({ type: "heading", level: Number(name.slice(1)) as 1 | 2 | 3 | 4 | 5 | 6, text, style });
+      const inlines = normalizeInlineSegments(parseInlineSegments(node, rules, style));
+      const text = inlineText(inlines) || normalizeWhitespace(textWithBreaks(node));
+      if (text) blocks.push({ type: "heading", level: Number(name.slice(1)) as 1 | 2 | 3 | 4 | 5 | 6, text, inlines, style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
       return;
     }
-    if (name === "p") {
-      const text = normalizeWhitespace(textWithBreaks(node));
-      if (text) blocks.push({ type: "paragraph", text, style });
+    if (name === "p" || name === "address") {
+      const inlines = normalizeInlineSegments(parseInlineSegments(node, rules, style));
+      const text = inlineText(inlines) || normalizeWhitespace(textWithBreaks(node));
+      if (text) blocks.push({ type: "paragraph", text, inlines, style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
+      return;
+    }
+    if (name === "blockquote") {
+      const inlines = normalizeInlineSegments(parseInlineSegments(node, rules, style));
+      const text = inlineText(inlines) || normalizeWhitespace(textWithBreaks(node));
+      if (text) blocks.push({ type: "blockquote", text, inlines, style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
+      return;
+    }
+    if (name === "pre") {
+      const text = normalizePreText(preText(node));
+      const preStyle = mergeStyle(style, { "font-family": style["font-family"] ?? "monospace" });
+      if (text) blocks.push({ type: "preformatted", text, inlines: [{ text, styles: preStyle }], style: preStyle });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
       return;
     }
     if (name === "img") {
       const src = attr(node, "src").trim();
       if (src) blocks.push({ type: "image", src, alt: attr(node, "alt"), style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
       return;
     }
     if (name === "hr") {
       blocks.push({ type: "hr", style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
       return;
     }
     if (name === "ul" || name === "ol") {
@@ -266,11 +394,24 @@ function parseFlowBlocks(nodes: AnyNode[], rules: CssRule[], blocks: ParsedBlock
       current.index += 1;
       if (listStack.length) listStack[listStack.length - 1] = current;
       const text = normalizeWhitespace(textWithBreaks(node));
-      if (text) blocks.push({ type: "list-item", text, ordered: current.ordered, index: current.index, style });
+      const inlines = normalizeInlineSegments(parseInlineSegments(node, rules, style));
+      if (text) blocks.push({ type: "list-item", text, inlines, ordered: current.ordered, index: current.index, style });
+      return;
+    }
+
+    if (name === "div" || name === "section" || name === "article" || name === "main" || name === "aside") {
+      const before = blocks.length;
+      for (const child of node.children ?? []) visit(child);
+      const producedChildBlock = blocks.length > before;
+      const inlines = normalizeInlineSegments(parseInlineSegments(node, rules, style));
+      const text = inlineText(inlines) || normalizeWhitespace(textWithBreaks(node));
+      if (!producedChildBlock && text) blocks.push({ type: "paragraph", text, inlines, style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
       return;
     }
 
     for (const child of node.children ?? []) visit(child);
+    if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
   };
 
   for (const node of nodes) visit(node);
@@ -306,7 +447,7 @@ export function parsePrintableHtml(html: string): ParsedDocument {
   const blocks = parseFlowBlocks(bodyChildren(roots), rules);
   if (blocks.length === 0) {
     const text = normalizeWhitespace(textWithBreaks(doc));
-    if (text) blocks.push({ type: "paragraph", text, style: {} });
+    if (text) blocks.push({ type: "paragraph", text, inlines: [{ text, styles: {} }], style: {} });
   }
   const primaryTable = blocks.find((block): block is Extract<ParsedBlock, { type: "table" }> => block.type === "table")?.table;
 

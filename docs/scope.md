@@ -26,16 +26,21 @@
 - repeated page header/footer text
 - streaming page numbers with `{page}`
 - custom fonts for Latin, Cyrillic, and CJK text
+- multiple Google Fonts via `font.googleFonts` and CSS `font-family`
 - optional `qpdf` owner-password protection
 
 ## Current HTML Subset
 
 - `header`
 - `div`
+- `section`, `article`, `main`, `aside`
 - `h1` - `h6`
 - `p`
+- `blockquote`
+- `pre`, `code`
+- `strong`, `b`, `em`, `i`, `u`, `s`, `del`, `span`, `a`
 - `ul`, `ol`, `li`
-- `table`, `thead`, `tbody`, `tr`, `th`, `td`
+- `table`, `thead`, `tbody`, `tfoot`, `tr`, `th`, `td`
 - `br`
 - `img`
 - `hr`
@@ -54,13 +59,22 @@ CSS support is intentionally pragmatic. The renderer recognizes common class nam
 - table/cell `padding`
 - table `border-collapse: collapse`
 - `colspan` and basic `rowspan` grid normalization
+- row-level `background-color`, `color`, `font-size`, and `text-align`
+- block `margin`, `padding`, and `border`
+- `line-height`
+- `text-decoration`
 - `font-size`
+- `font-family` for registered/default fonts and configured Google Fonts
 - `font-weight`
+- `font-style: italic`
 - `color`
 - `background-color`
 - `text-align`
 - `margin-top`
 - `margin-bottom`
 - image `width` and `height`
+- `display: none`
+- `visibility: hidden`
+- `page-break-before`, `page-break-after`, `break-before`, `break-after`
 
 Full CSS cascade, Flexbox, Grid, JavaScript execution, and arbitrary website rendering are outside the first production target. `{total}` page counts are also intentionally not resolved in streaming mode because that requires buffering or a second pass.

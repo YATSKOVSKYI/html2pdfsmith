@@ -15,8 +15,8 @@ Current Windows/Bun sample:
   "columns": 10,
   "rows": 100,
   "pages": 6,
-  "ms": 123,
-  "deltaPeakRssMb": 41.1
+  "ms": 118,
+  "deltaPeakRssMb": 46.4
 }
 ```
 

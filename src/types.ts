@@ -4,8 +4,12 @@ export type WatermarkPattern = "auto" | "minimal" | "diagonal" | "triangle" | "c
 export interface PdfFontOptions {
   regularPath?: string;
   boldPath?: string;
+  italicPath?: string;
+  boldItalicPath?: string;
   regularBytes?: Uint8Array;
   boldBytes?: Uint8Array;
+  italicBytes?: Uint8Array;
+  boldItalicBytes?: Uint8Array;
   /**
    * Google Fonts family name, e.g. "Inter", "Roboto", "Noto Sans".
    * On first use the regular (400) and bold (700) TTF files are downloaded
@@ -16,6 +20,11 @@ export interface PdfFontOptions {
    * `regularPath`/`boldPath`/`regularBytes`/`boldBytes`.
    */
   googleFont?: string;
+  /**
+   * Additional Google Fonts that can be selected with CSS `font-family`
+   * inside the document, e.g. `font-family: "Roboto"`.
+   */
+  googleFonts?: string[];
   /**
    * When true, the renderer may auto-discover large system fonts for CJK/Cyrillic coverage.
    * Keep false for lowest memory; pass explicit small/subset fonts in production.
@@ -90,12 +99,21 @@ export interface ParsedDocument {
   primaryTable?: ParsedTable;
 }
 
+export interface ParsedInlineSegment {
+  text: string;
+  styles: Record<string, string>;
+  href?: string;
+}
+
 export type ParsedBlock =
-  | { type: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; text: string; style: Record<string, string> }
-  | { type: "paragraph"; text: string; style: Record<string, string> }
-  | { type: "list-item"; text: string; ordered: boolean; index: number; style: Record<string, string> }
+  | { type: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
+  | { type: "paragraph"; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
+  | { type: "preformatted"; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
+  | { type: "blockquote"; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
+  | { type: "list-item"; text: string; inlines: ParsedInlineSegment[]; ordered: boolean; index: number; style: Record<string, string> }
   | { type: "image"; src: string; alt: string; style: Record<string, string> }
   | { type: "hr"; style: Record<string, string> }
+  | { type: "page-break"; style: Record<string, string> }
   | { type: "table"; table: ParsedTable; style: Record<string, string> };
 
 export interface ParsedTable {
@@ -107,10 +125,12 @@ export interface ParsedTable {
 export interface ParsedRow {
   cells: ParsedCell[];
   kind: "header" | "price" | "section" | "body";
+  styles: Record<string, string>;
 }
 
 export interface ParsedCell {
   text: string;
+  inlines: ParsedInlineSegment[];
   className: string;
   style: string;
   styles: Record<string, string>;

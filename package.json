@@ -1,22 +1,62 @@
 {
   "name": "html2pdfsmith",
   "version": "0.1.0",
-  "description": "Browserless HTML-to-PDF rendering engine for TypeScript and Bun.",
+  "description": "Browserless HTML-to-PDF rendering engine for TypeScript and Bun. No Chromium, low-memory streaming renderer, Google Fonts support with disk caching.",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
   "files": [
     "src",
-    "README.md"
+    "docs",
+    "examples",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "example": "bun run examples/simple-table.ts",
     "example:css-table": "bun run examples/css-table.ts",
     "example:document": "bun run examples/simple-document.ts",
+    "example:fonts": "bun run examples/font-table.ts",
     "bench": "bun --expose-gc run examples/bench-table.ts",
-    "smoke": "bun run examples/smoke.ts"
+    "smoke": "bun run examples/smoke.ts",
+    "test:fonts": "bun run examples/test-google-fonts.ts"
   },
+  "keywords": [
+    "pdf",
+    "html-to-pdf",
+    "html2pdf",
+    "pdfkit",
+    "browserless",
+    "bun",
+    "typescript",
+    "pdf-generator",
+    "pdf-render",
+    "google-fonts",
+    "streaming",
+    "low-memory",
+    "no-chromium",
+    "no-puppeteer",
+    "document",
+    "table",
+    "report"
+  ],
+  "author": "dmytro_yatskovskyi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YATSKOVSKYI/html2pdfsmith.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YATSKOVSKYI/html2pdfsmith/issues"
+  },
+  "homepage": "https://github.com/YATSKOVSKYI/html2pdfsmith#readme",
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",
     "@types/pdfkit": "^0.17.6",

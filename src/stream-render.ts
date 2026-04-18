@@ -4,12 +4,14 @@ import { Buffer } from "node:buffer";
 import { existsSync } from "node:fs";
 import { discoverFontPaths, loadImage, resolveFontPaths } from "./assets";
 import { parseBorderStyle, parseBoxSpacing, parseCssColor, parseLengthPx, type BoxSpacing, type BorderStyle, type StyleMap } from "./css";
+import { resolveGoogleFont } from "./google-fonts";
 import { parsePrintableHtml } from "./html";
 import type {
   PageOrientation,
   ParsedBlock,
   ParsedCell,
   ParsedDocument,
+  ParsedInlineSegment,
   ParsedRow,
   ParsedTable,
   RenderHtmlToPdfOptions,
@@ -27,6 +29,13 @@ import { WarningSink } from "./warnings";
 import { protectPdfWithQpdf } from "./protect";
 
 type PdfKitDocument = InstanceType<typeof PDFDocument>;
+
+interface RegisteredFontPair {
+  regular: string;
+  bold: string;
+  italic: string;
+  boldItalic: string;
+}
 
 interface StreamContext {
   doc: PdfKitDocument;
@@ -54,6 +63,9 @@ interface StreamContext {
   cellPaddingY: number;
   regularFontName: string;
   boldFontName: string;
+  italicFontName: string;
+  boldItalicFontName: string;
+  fontFamilies: Map<string, RegisteredFontPair>;
   watermarkAsset: LoadedPdfKitAsset | null;
   logoAsset: LoadedPdfKitAsset | null;
   qrAsset: LoadedPdfKitAsset | null;
@@ -67,8 +79,19 @@ interface LoadedPdfKitAsset {
   svgText?: string;
 }
 
+interface ImageDimensions {
+  width: number;
+  height: number;
+}
+
 interface TableRenderStyle {
   borderCollapse: boolean;
+  border: BorderStyle;
+}
+
+interface TextBoxStyle {
+  margin: BoxSpacing;
+  padding: BoxSpacing;
   border: BorderStyle;
 }
 
@@ -129,6 +152,15 @@ function cellPadding(ctx: StreamContext, cell: ParsedCell): BoxSpacing {
   }));
 }
 
+function spacingPt(styles: StyleMap, property: "padding" | "margin", fallback: BoxSpacing): BoxSpacing {
+  return boxPxToPt(parseBoxSpacing(styles, property, {
+    top: fallback.top * 96 / 72,
+    right: fallback.right * 96 / 72,
+    bottom: fallback.bottom * 96 / 72,
+    left: fallback.left * 96 / 72,
+  }));
+}
+
 function borderPxToPt(border: BorderStyle): BorderStyle {
   const out: BorderStyle = { width: pxToPt(border.width) };
   if (border.color) out.color = border.color;
@@ -177,6 +209,26 @@ function tableStyle(style: StyleMap): TableRenderStyle {
   };
 }
 
+function textBoxStyle(block: Extract<ParsedBlock, { type: "heading" | "paragraph" | "list-item" | "blockquote" | "preformatted" }>): TextBoxStyle {
+  const margin = spacingPt(block.style, "margin", {
+    top: blockMarginTop(block),
+    right: 0,
+    bottom: blockMarginBottom(block),
+    left: 0,
+  });
+  const defaultPadding = block.type === "preformatted"
+    ? { top: 6, right: 7, bottom: 6, left: 7 }
+    : block.type === "blockquote"
+      ? { top: 2, right: 0, bottom: 2, left: 10 }
+      : { top: 0, right: 0, bottom: 0, left: 0 };
+  const padding = spacingPt(block.style, "padding", defaultPadding);
+  const border = borderPxToPt(parseBorderStyle(block.style, {
+    width: block.type === "blockquote" ? 0 : 0,
+    color: COLORS.border,
+  }));
+  return { margin, padding, border };
+}
+
 function maxDocumentColumns(parsed: ParsedDocument): number {
   return Math.max(
     1,
@@ -193,24 +245,76 @@ function chunksToBuffer(doc: PdfKitDocument): Promise<Buffer> {
   });
 }
 
-async function registerFonts(doc: PdfKitDocument, options: RenderHtmlToPdfOptions, warnings: WarningSink): Promise<{ regular: string; bold: string }> {
+function normalizeFontFamily(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const first = value.split(",")[0]?.trim().replace(/^['"]|['"]$/g, "");
+  return first ? first.toLowerCase() : undefined;
+}
+
+function googleFontFamilies(options: RenderHtmlToPdfOptions): string[] {
+  const families = [options.font?.googleFont, ...(options.font?.googleFonts ?? [])]
+    .map((family) => family?.trim())
+    .filter((family): family is string => Boolean(family));
+  return [...new Map(families.map((family) => [family.toLowerCase(), family])).values()];
+}
+
+function registerFontPair(doc: PdfKitDocument, family: string, paths: { regularPath?: string; boldPath?: string; italicPath?: string; boldItalicPath?: string }, warnings: WarningSink): RegisteredFontPair | null {
+  const regularPath = paths.regularPath;
+  const boldPath = paths.boldPath ?? regularPath;
+  const italicPath = paths.italicPath ?? regularPath;
+  const boldItalicPath = paths.boldItalicPath ?? boldPath ?? italicPath;
+  if (!regularPath || !existsSync(regularPath)) return null;
+  const slug = normalizeFontFamily(family)?.replace(/[^a-z0-9_-]+/g, "-") ?? `font-${Date.now()}`;
+  const regularName = `gf-${slug}-regular`;
+  const boldName = `gf-${slug}-bold`;
+  const italicName = `gf-${slug}-italic`;
+  const boldItalicName = `gf-${slug}-bold-italic`;
+  try {
+    doc.registerFont(regularName, regularPath);
+    if (boldPath && existsSync(boldPath)) doc.registerFont(boldName, boldPath);
+    else doc.registerFont(boldName, regularPath);
+    if (italicPath && existsSync(italicPath)) doc.registerFont(italicName, italicPath);
+    else doc.registerFont(italicName, regularPath);
+    if (boldItalicPath && existsSync(boldItalicPath)) doc.registerFont(boldItalicName, boldItalicPath);
+    else doc.registerFont(boldItalicName, boldPath ?? italicPath ?? regularPath);
+    return { regular: regularName, bold: boldName, italic: italicName, boldItalic: boldItalicName };
+  } catch (error) {
+    warnings.add("google_font_register_failed", `Could not register Google Font "${family}": ${String(error)}`);
+    return null;
+  }
+}
+
+async function registerFonts(doc: PdfKitDocument, options: RenderHtmlToPdfOptions, warnings: WarningSink): Promise<RegisteredFontPair & { families: Map<string, RegisteredFontPair> }> {
   const resolved = await resolveFontPaths(options.font, warnings);
   const regularPath = resolved.regularPath;
   const boldPath = resolved.boldPath ?? regularPath;
+  const families = new Map<string, RegisteredFontPair>();
+
+  for (const family of googleFontFamilies(options)) {
+    const paths = await resolveGoogleFont(family, warnings);
+    if (!paths) continue;
+    const pair = registerFontPair(doc, family, paths, warnings);
+    const normalized = normalizeFontFamily(family);
+    if (pair && normalized) families.set(normalized, pair);
+  }
 
   if (regularPath && existsSync(regularPath)) {
     try {
       doc.registerFont("regular", regularPath);
       if (boldPath && existsSync(boldPath)) doc.registerFont("bold", boldPath);
       else doc.registerFont("bold", regularPath);
-      return { regular: "regular", bold: "bold" };
+      if (resolved.italicPath && existsSync(resolved.italicPath)) doc.registerFont("italic", resolved.italicPath);
+      else doc.registerFont("italic", regularPath);
+      if (resolved.boldItalicPath && existsSync(resolved.boldItalicPath)) doc.registerFont("boldItalic", resolved.boldItalicPath);
+      else doc.registerFont("boldItalic", boldPath ?? resolved.italicPath ?? regularPath);
+      return { regular: "regular", bold: "bold", italic: "italic", boldItalic: "boldItalic", families };
     } catch (error) {
       warnings.add("font_register_failed", `Could not register custom font: ${String(error)}`);
     }
   }
 
   warnings.add("font_fallback", "Falling back to Helvetica; pass explicit fonts for non-Latin text. This keeps the default memory footprint low.");
-  return { regular: "Helvetica", bold: "Helvetica-Bold" };
+  return { regular: "Helvetica", bold: "Helvetica-Bold", italic: "Helvetica-Oblique", boldItalic: "Helvetica-BoldOblique", families };
 }
 
 async function loadPdfKitAsset(src: string | null | undefined, warnings: WarningSink): Promise<LoadedPdfKitAsset | null> {
@@ -244,6 +348,14 @@ function drawAsset(doc: PdfKitDocument, asset: LoadedPdfKitAsset, x: number, y: 
   doc.restore();
 }
 
+function drawAssetSafely(ctx: StreamContext, asset: LoadedPdfKitAsset, x: number, y: number, width: number, height: number, opacity = 1, label = "image"): void {
+  try {
+    drawAsset(ctx.doc, asset, x, y, width, height, opacity);
+  } catch (error) {
+    ctx.warnings.add("image_draw_failed", `Failed to draw ${label}: ${String(error)}`);
+  }
+}
+
 function drawWatermark(ctx: StreamContext): void {
   const text = ctx.options.watermarkText?.trim();
   const asset = ctx.watermarkAsset;
@@ -266,7 +378,7 @@ function drawWatermark(ctx: StreamContext): void {
       ctx.doc.rotate(angle, { origin: [x, y] });
       if (asset) {
         const side = 24 + scale * 1.15;
-        drawAsset(ctx.doc, asset, x, y, side, side, 1);
+        drawAssetSafely(ctx, asset, x, y, side, side, 1, "watermark");
       } else if (text) {
         ctx.doc.font(ctx.boldFontName).fontSize(12 + scale * 0.16).fillColor("#555555").text(text, x, y, {
           width: step * 0.9,
@@ -370,7 +482,7 @@ function drawHeader(ctx: StreamContext): void {
 
   if (ctx.logoAsset) {
     const logoScale = clamp(ctx.options.logoScale ?? 100, 1, 200);
-    drawAsset(ctx.doc, ctx.logoAsset, ctx.margin, top, 60 + logoScale * 1.8, Math.min(42, headerHeight - 4));
+    drawAssetSafely(ctx, ctx.logoAsset, ctx.margin, top, 60 + logoScale * 1.8, Math.min(42, headerHeight - 4), 1, "logo");
   } else {
     const brand = ctx.parsed.brandText || "DOCUMENT";
     const fontSize = fitFontSize(ctx.doc, ctx.boldFontName, brand, 21, ctx.tableWidth * 0.42, 11);
@@ -384,7 +496,7 @@ function drawHeader(ctx: StreamContext): void {
   if (ctx.qrAsset) {
     const size = Math.min(76, headerHeight - 4);
     right -= size;
-    drawAsset(ctx.doc, ctx.qrAsset, right, top, size, size);
+    drawAssetSafely(ctx, ctx.qrAsset, right, top, size, size, 1, "qr");
     right -= 10;
   }
 
@@ -414,7 +526,39 @@ function blockFontSize(block: ParsedBlock): number {
     const defaults: Record<number, number> = { 1: 24, 2: 20, 3: 17, 4: 14, 5: 12, 6: 11 };
     return cssLengthPt(block.style["font-size"]) ?? defaults[block.level] ?? 12;
   }
+  if (block.type === "preformatted") return cssLengthPt(block.style["font-size"]) ?? 9;
+  if (block.type === "blockquote") return cssLengthPt(block.style["font-size"]) ?? 10.5;
   return cssLengthPt(block.style["font-size"]) ?? 10.5;
+}
+
+function pngDimensions(bytes: Buffer): ImageDimensions | null {
+  if (bytes.length < 24 || bytes[0] !== 0x89 || bytes[1] !== 0x50) return null;
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+}
+
+function jpgDimensions(bytes: Buffer): ImageDimensions | null {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  let offset = 2;
+  while (offset + 9 < bytes.length) {
+    if (bytes[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+    const marker = bytes[offset + 1];
+    const length = bytes.readUInt16BE(offset + 2);
+    if (length < 2) return null;
+    if (marker && marker >= 0xc0 && marker <= 0xc3) {
+      return { width: bytes.readUInt16BE(offset + 7), height: bytes.readUInt16BE(offset + 5) };
+    }
+    offset += 2 + length;
+  }
+  return null;
+}
+
+function imageDimensions(asset: LoadedPdfKitAsset): ImageDimensions | null {
+  if (asset.kind === "png") return pngDimensions(asset.bytes);
+  if (asset.kind === "jpg") return jpgDimensions(asset.bytes);
+  return null;
 }
 
 function blockColor(block: ParsedBlock): string {
@@ -423,7 +567,7 @@ function blockColor(block: ParsedBlock): string {
 
 function blockMarginBottom(block: ParsedBlock): number {
   if (block.type === "heading") return cssLengthPt(block.style["margin-bottom"]) ?? 8;
-  if (block.type === "paragraph" || block.type === "list-item") return cssLengthPt(block.style["margin-bottom"]) ?? 6;
+  if (block.type === "paragraph" || block.type === "list-item" || block.type === "blockquote" || block.type === "preformatted") return cssLengthPt(block.style["margin-bottom"]) ?? 6;
   if (block.type === "image") return cssLengthPt(block.style["margin-bottom"]) ?? 8;
   return cssLengthPt(block.style["margin-bottom"]) ?? 4;
 }
@@ -432,8 +576,95 @@ function blockMarginTop(block: ParsedBlock): number {
   return cssLengthPt(block.style["margin-top"]) ?? 0;
 }
 
-function drawTextBlock(ctx: StreamContext, block: Extract<ParsedBlock, { type: "heading" | "paragraph" | "list-item" }>): void {
-  const top = blockMarginTop(block);
+function lineGapForStyle(style: StyleMap, size: number, fallbackFactor: number): number {
+  const raw = style["line-height"];
+  if (!raw || raw.trim().toLowerCase() === "normal") return size * fallbackFactor;
+  const trimmed = raw.trim();
+  const numeric = Number.parseFloat(trimmed);
+  if (!Number.isFinite(numeric)) return size * fallbackFactor;
+  if (/^[0-9.]+$/.test(trimmed)) return Math.max(0, size * numeric - size);
+  if (trimmed.endsWith("%")) return Math.max(0, size * numeric / 100 - size);
+  const length = cssLengthPt(trimmed);
+  return length == null ? size * fallbackFactor : Math.max(0, length - size);
+}
+
+function inlineFont(ctx: StreamContext, segment: ParsedInlineSegment, fallbackFont: string): string {
+  const family = normalizeFontFamily(segment.styles["font-family"]);
+  const weight = segment.styles["font-weight"];
+  const bold = weight === "bold" || Number(weight) >= 600;
+  const italic = (segment.styles["font-style"] ?? "").toLowerCase() === "italic";
+  if (family && ctx.fontFamilies.has(family)) {
+    const pair = ctx.fontFamilies.get(family)!;
+    if (bold && italic) return pair.boldItalic;
+    if (italic) return pair.italic;
+    return bold ? pair.bold : pair.regular;
+  }
+  if (family?.includes("mono") || family?.includes("courier")) {
+    if (bold && italic) return "Courier-BoldOblique";
+    if (italic) return "Courier-Oblique";
+    return bold ? "Courier-Bold" : "Courier";
+  }
+  if (italic && bold) return ctx.boldItalicFontName;
+  if (italic) return ctx.italicFontName;
+  if (bold) return ctx.boldFontName;
+  return fallbackFont;
+}
+
+function inlineSize(segment: ParsedInlineSegment, fallbackSize: number): number {
+  return cssLengthPt(segment.styles["font-size"]) ?? fallbackSize;
+}
+
+function inlineColor(segment: ParsedInlineSegment, fallbackColor: string): string {
+  return parseCssColor(segment.styles["color"]) ?? fallbackColor;
+}
+
+function inlineTextHeight(ctx: StreamContext, text: string, inlines: ParsedInlineSegment[], fallbackFont: string, fallbackSize: number, width: number, lineGap: number): number {
+  const maxSize = Math.max(fallbackSize, ...inlines.map((segment) => inlineSize(segment, fallbackSize)));
+  ctx.doc.font(fallbackFont).fontSize(maxSize);
+  return ctx.doc.heightOfString(text || " ", { width, lineGap });
+}
+
+function drawInlineText(
+  ctx: StreamContext,
+  text: string,
+  inlines: ParsedInlineSegment[],
+  x: number,
+  y: number,
+  width: number,
+  fallbackFont: string,
+  fallbackSize: number,
+  fallbackColor: string,
+  lineGap: number,
+  align: "left" | "center" | "right",
+): void {
+  const segments = inlines.length > 0 ? inlines : [{ text, styles: {} }];
+  let first = true;
+  for (const segment of segments) {
+    const decoration = (segment.styles["text-decoration"] ?? "").toLowerCase();
+    const options = {
+      width,
+      lineGap,
+      align,
+      continued: !segment.text.endsWith("\n") && segment !== segments[segments.length - 1],
+      underline: decoration.includes("underline"),
+      strike: decoration.includes("line-through"),
+      link: segment.href,
+    };
+    ctx.doc
+      .font(inlineFont(ctx, segment, fallbackFont))
+      .fontSize(inlineSize(segment, fallbackSize))
+      .fillColor(inlineColor(segment, fallbackColor));
+    if (first) {
+      ctx.doc.text(segment.text, x, y, options);
+      first = false;
+    } else {
+      ctx.doc.text(segment.text, options);
+    }
+  }
+  if (!first) ctx.doc.text("", { continued: false });
+}
+
+function drawTextBlock(ctx: StreamContext, block: Extract<ParsedBlock, { type: "heading" | "paragraph" | "list-item" | "blockquote" | "preformatted" }>): void {
   const size = blockFontSize(block);
   const font = block.type === "heading" || block.style["font-weight"] === "bold" || Number(block.style["font-weight"]) >= 600
     ? ctx.boldFontName
@@ -441,35 +672,64 @@ function drawTextBlock(ctx: StreamContext, block: Extract<ParsedBlock, { type: "
   const prefix = block.type === "list-item"
     ? block.ordered ? `${block.index}. ` : "- "
     : "";
+  const box = textBoxStyle(block);
   const indent = block.type === "list-item" ? 14 : 0;
-  const width = ctx.tableWidth - indent;
-  const lineGap = size * 0.22;
+  const boxX = ctx.margin + box.margin.left;
+  const boxWidth = Math.max(20, ctx.tableWidth - box.margin.left - box.margin.right);
+  const contentX = boxX + box.border.width + box.padding.left + indent;
+  const contentWidth = Math.max(20, boxWidth - box.border.width * 2 - box.padding.left - box.padding.right - indent);
+  const lineGap = lineGapForStyle(block.style, size, block.type === "preformatted" ? 0.1 : 0.22);
   ctx.doc.font(font).fontSize(size);
-  const height = ctx.doc.heightOfString(prefix + block.text, { width, lineGap });
-  ensureSpace(ctx, top + height + blockMarginBottom(block));
-  if (top) ctx.y += top;
+  const displayText = prefix + block.text;
+  const displayInlines = prefix
+    ? [{ text: prefix, styles: { "font-weight": block.type === "list-item" && block.ordered ? "400" : "700" } }, ...block.inlines]
+    : block.inlines;
+  const textHeightValue = inlineTextHeight(ctx, displayText, displayInlines, font, size, contentWidth, lineGap);
+  const boxHeight = textHeightValue + box.padding.top + box.padding.bottom + box.border.width * 2;
+  ensureSpace(ctx, box.margin.top + boxHeight + box.margin.bottom);
+  ctx.y += box.margin.top;
 
-  const bg = parseCssColor(block.style["background-color"]);
-  if (bg) ctx.doc.rect(ctx.margin, ctx.y - 3, ctx.tableWidth, height + 6).fill(bg);
+  const bg = parseCssColor(block.style["background-color"]) ?? (block.type === "preformatted" ? "#f6f8fa" : undefined);
+  if (bg) ctx.doc.rect(boxX, ctx.y, boxWidth, boxHeight).fill(bg);
+  if (box.border.width > 0) ctx.doc.rect(boxX, ctx.y, boxWidth, boxHeight).strokeColor(box.border.color ?? COLORS.border).lineWidth(box.border.width).stroke();
+  if (block.type === "blockquote") {
+    const border = parseBorderStyle(block.style, { width: 3 * 96 / 72, color: parseCssColor(block.style["border-color"]) ?? COLORS.border });
+    ctx.doc.rect(boxX, ctx.y, Math.max(2, pxToPt(border.width)), boxHeight).fill(border.color ?? COLORS.border);
+  }
 
-  ctx.doc.font(font).fontSize(size).fillColor(blockColor(block)).text(prefix + block.text, ctx.margin + indent, ctx.y, {
-    width,
-    lineGap,
-    align: block.style["text-align"] === "center" || block.style["text-align"] === "right" ? block.style["text-align"] as "center" | "right" : "left",
-  });
-  ctx.y += height + blockMarginBottom(block);
+  drawInlineText(ctx, displayText, displayInlines, contentX, ctx.y + box.border.width + box.padding.top, contentWidth, font, size, blockColor(block), lineGap, block.style["text-align"] === "center" || block.style["text-align"] === "right" ? block.style["text-align"] as "center" | "right" : "left");
+  ctx.y += boxHeight + box.margin.bottom;
 }
 
 async function drawImageBlock(ctx: StreamContext, block: Extract<ParsedBlock, { type: "image" }>): Promise<void> {
   const asset = await getAsset(ctx, block.src);
   if (!asset) return;
-  const maxWidth = cssLengthPt(block.style["width"], ctx.tableWidth) ?? ctx.tableWidth;
-  const maxHeight = cssLengthPt(block.style["height"]) ?? 180;
-  const width = Math.min(maxWidth, ctx.tableWidth);
-  const height = Math.min(maxHeight, 240);
+  const dims = imageDimensions(asset);
+  const cssWidth = cssLengthPt(block.style["width"], ctx.tableWidth);
+  const cssHeight = cssLengthPt(block.style["height"]);
+  let width = cssWidth ?? (dims ? pxToPt(dims.width) : ctx.tableWidth);
+  let height = cssHeight ?? (dims ? pxToPt(dims.height) : 180);
+  if (dims && cssWidth != null && cssHeight == null) height = width * dims.height / dims.width;
+  if (dims && cssHeight != null && cssWidth == null) width = height * dims.width / dims.height;
+  if (width > ctx.tableWidth) {
+    const scale = ctx.tableWidth / width;
+    width = ctx.tableWidth;
+    height *= scale;
+  }
+  if (height > 360) {
+    const scale = 360 / height;
+    height = 360;
+    width *= scale;
+  }
   ensureSpace(ctx, height + blockMarginTop(block) + blockMarginBottom(block));
   ctx.y += blockMarginTop(block);
-  drawAsset(ctx.doc, asset, ctx.margin, ctx.y, width, height);
+  const align = block.style["text-align"] === "center"
+    ? "center"
+    : block.style["text-align"] === "right"
+      ? "right"
+      : "left";
+  const x = align === "center" ? ctx.margin + (ctx.tableWidth - width) / 2 : align === "right" ? ctx.margin + ctx.tableWidth - width : ctx.margin;
+  drawAssetSafely(ctx, asset, x, ctx.y, width, height, 1, "image block");
   ctx.y += height + blockMarginBottom(block);
 }
 
@@ -488,7 +748,7 @@ function fontForCell(ctx: StreamContext, cell: ParsedCell, row: ParsedRow): stri
 }
 
 function sizeForCell(ctx: StreamContext, cell: ParsedCell, row: ParsedRow): number {
-  const cssSize = cssLengthPt(cell.styles["font-size"]);
+  const cssSize = cssLengthPt(cell.styles["font-size"]) ?? cssLengthPt(row.styles["font-size"]);
   if (cssSize) return cssSize;
   if (row.kind === "section") return ctx.sectionFontSize;
   if (row.kind === "header") return ctx.headerFontSize;
@@ -521,7 +781,8 @@ function estimateRowHeight(ctx: StreamContext, row: ParsedRow): number {
     const font = fontForCell(ctx, cell, row);
     const size = sizeForCell(ctx, cell, row);
     const padding = cellPadding(ctx, cell);
-    height = Math.max(height, textHeight(ctx, cell.text, font, size, Math.max(12, width - padding.left - padding.right)) + padding.top + padding.bottom);
+    const lineGap = lineGapForStyle({ ...row.styles, ...cell.styles }, size, 0.18);
+    height = Math.max(height, inlineTextHeight(ctx, cell.text, cell.inlines, font, size, Math.max(12, width - padding.left - padding.right), lineGap) + padding.top + padding.bottom);
     col += span;
   }
 
@@ -553,12 +814,12 @@ async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promi
     const fill = cell.isDiff
       ? (parseCssColor(cell.styles["background-color"]) ?? COLORS.diffBg)
       : row.kind === "header" || row.kind === "price"
-        ? (parseCssColor(cell.styles["background-color"]) ?? COLORS.headerBg)
+        ? (parseCssColor(cell.styles["background-color"]) ?? parseCssColor(row.styles["background-color"]) ?? COLORS.headerBg)
         : cell.isParam
-          ? (parseCssColor(cell.styles["background-color"]) ?? COLORS.paramBg)
+          ? (parseCssColor(cell.styles["background-color"]) ?? parseCssColor(row.styles["background-color"]) ?? COLORS.paramBg)
           : row.kind === "body" && index % 2 === 1
-            ? COLORS.evenBg
-            : parseCssColor(cell.styles["background-color"]) ?? null;
+            ? (parseCssColor(row.styles["background-color"]) ?? COLORS.evenBg)
+            : parseCssColor(cell.styles["background-color"]) ?? parseCssColor(row.styles["background-color"]) ?? null;
 
     if (fill) ctx.doc.rect(x, y, width, height).fill(fill);
     strokeCellBorder(ctx, cell, x, y, width, height, border);
@@ -573,16 +834,20 @@ async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promi
     const size = sizeForCell(ctx, cell, row);
     if (cell.imageSrc) {
       const asset = await getAsset(ctx, cell.imageSrc);
-      if (asset) drawAsset(ctx.doc, asset, x + padding.left, y + padding.top, Math.max(1, width - padding.left - padding.right), Math.max(1, height - padding.top - padding.bottom));
+      if (asset) drawAssetSafely(ctx, asset, x + padding.left, y + padding.top, Math.max(1, width - padding.left - padding.right), Math.max(1, height - padding.top - padding.bottom), 1, "cell image");
     }
 
-    ctx.doc.font(font).fontSize(size).fillColor(parseCssColor(cell.styles["color"]) ?? COLORS.text).text(cell.text, x + padding.left, y + padding.top, {
-      width: Math.max(12, width - padding.left - padding.right),
-      height: Math.max(8, height - padding.top - padding.bottom),
-      lineGap: size * 0.18,
-      ellipsis: true,
-      align: cell.styles["text-align"] === "center" || cell.styles["text-align"] === "right" ? cell.styles["text-align"] as "center" | "right" : "left",
-    });
+    const align = cell.styles["text-align"] === "center" || cell.styles["text-align"] === "right"
+      ? cell.styles["text-align"] as "center" | "right"
+      : row.styles["text-align"] === "center" || row.styles["text-align"] === "right"
+        ? row.styles["text-align"] as "center" | "right"
+        : "left";
+    const textColor = parseCssColor(cell.styles["color"]) ?? parseCssColor(row.styles["color"]) ?? COLORS.text;
+    const lineGap = lineGapForStyle({ ...row.styles, ...cell.styles }, size, 0.18);
+    ctx.doc.save();
+    ctx.doc.rect(x + padding.left, y + padding.top, Math.max(12, width - padding.left - padding.right), Math.max(8, height - padding.top - padding.bottom)).clip();
+    drawInlineText(ctx, cell.text, cell.inlines, x + padding.left, y + padding.top, Math.max(12, width - padding.left - padding.right), font, size, textColor, lineGap, align);
+    ctx.doc.restore();
 
     x += width;
     col += span;
@@ -631,12 +896,14 @@ async function drawTableBlock(ctx: StreamContext, block: Extract<ParsedBlock, { 
 }
 
 async function drawBlock(ctx: StreamContext, block: ParsedBlock): Promise<void> {
-  if (block.type === "heading" || block.type === "paragraph" || block.type === "list-item") {
+  if (block.type === "heading" || block.type === "paragraph" || block.type === "list-item" || block.type === "blockquote" || block.type === "preformatted") {
     drawTextBlock(ctx, block);
   } else if (block.type === "image") {
     await drawImageBlock(ctx, block);
   } else if (block.type === "hr") {
     drawHrBlock(ctx, block);
+  } else if (block.type === "page-break") {
+    if (ctx.y > ctx.contentTop + 1) addPage(ctx);
   } else if (block.type === "table") {
     await drawTableBlock(ctx, block);
   }
@@ -705,6 +972,9 @@ async function createStreamContext(options: RenderHtmlToPdfOptions, parsed: Pars
     cellPaddingY: Math.max(1.8, 4 * paddingScale),
     regularFontName: fonts.regular,
     boldFontName: fonts.bold,
+    italicFontName: fonts.italic,
+    boldItalicFontName: fonts.boldItalic,
+    fontFamilies: fonts.families,
     watermarkAsset: await loadPdfKitAsset(options.watermarkUrl, warnings),
     logoAsset: await loadPdfKitAsset(options.userLogoUrl, warnings),
     qrAsset: await loadPdfKitAsset(parsed.contactQrSrc, warnings),

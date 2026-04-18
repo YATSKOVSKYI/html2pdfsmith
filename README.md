@@ -1,141 +1,91 @@
 <p align="center">
-  <img src="docs/logo.svg" alt="Html2PdfSmith" width="800"/>
+  <img src="docs/logo.svg" alt="Html2PdfSmith" width="860"/>
 </p>
 
 <p align="center">
-  <strong>Browserless HTML-to-PDF rendering engine for TypeScript &amp; Bun</strong><br/>
-  <sub>No Chromium. No Playwright. No headless browsers. Just fast, predictable PDFs.</sub>
+  <strong>Browserless HTML-to-PDF rendering engine for TypeScript and Bun.</strong><br/>
+  <sub>HTML in. PDF out. No Chromium, no Playwright, no headless browser process.</sub>
 </p>
 
 <p align="center">
-  <a href="#-quickstart"><img src="https://img.shields.io/badge/bun-%E2%89%A51.2.0-f472b6?style=flat-square&logo=bun&logoColor=white" alt="Bun ≥1.2.0"/></a>
-  <a href="#-api"><img src="https://img.shields.io/badge/TypeScript-first_class-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"/></a>
-  <a href="#-performance"><img src="https://img.shields.io/badge/RSS-~41_MB-22c55e?style=flat-square" alt="~41 MB RSS"/></a>
-  <a href="#-performance"><img src="https://img.shields.io/badge/render-~123_ms-f59e0b?style=flat-square" alt="~123 ms"/></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-818cf8?style=flat-square" alt="MIT License"/></a>
+  <a href="#quickstart"><img src="https://img.shields.io/badge/Bun-%3E%3D1.2.0-f472b6?style=flat-square&logo=bun&logoColor=white" alt="Bun >= 1.2.0"/></a>
+  <a href="#api"><img src="https://img.shields.io/badge/TypeScript-first-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript first"/></a>
+  <a href="#performance"><img src="https://img.shields.io/badge/incremental_RSS-~46_MB-22c55e?style=flat-square" alt="~46 MB incremental RSS"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-818cf8?style=flat-square" alt="MIT"/></a>
 </p>
 
 ---
 
-## Why Html2PdfSmith?
+## Why
 
-Most HTML-to-PDF tools spin up a full **Chromium** instance — eating **300+ MB of RAM** per render and adding seconds of latency. Html2PdfSmith takes a different approach:
+Most HTML-to-PDF stacks render through Chromium. That gives broad web compatibility, but it also brings browser startup, large binaries, and high memory use.
 
-| | Chromium / Playwright | **Html2PdfSmith** |
-|---|---|---|
-| **Memory** | 300–500 MB per instance | **~41 MB** incremental RSS |
-| **Cold start** | 2–5 seconds | **~123 ms** total render |
-| **Dependencies** | Chromium binary (~280 MB) | **Zero** native binaries |
-| **Architecture** | Headless browser | **Streaming PDFKit** pipeline |
-| **Font loading** | Auto (heavy) | **Explicit** (you control it) |
+Html2PdfSmith is a different tradeoff: it is a document renderer for predictable printable HTML. It parses HTML, extracts a pragmatic CSS subset, lays out pages, and writes PDF directly through a streaming PDFKit pipeline.
 
-> [!NOTE]
-> This is **not** a full browser engine. It targets a practical **document subset** — tables, reports, invoices, and branded PDFs — with pixel-perfect control and minimal overhead.
+| Area | Browser-based renderers | Html2PdfSmith |
+|---|---:|---:|
+| Runtime | Chromium / Playwright / Puppeteer | Bun + PDFKit |
+| Memory model | Browser process per render or pool | Streaming PDF writer |
+| Best fit | Arbitrary web pages | Reports, invoices, tables, branded PDFs |
+| JavaScript execution | Yes | No |
+| CSS scope | Browser CSS engine | Practical document CSS subset |
+| Typical benchmark | Hundreds of MB RSS | ~46 MB incremental RSS for 10x100 table |
 
----
+Html2PdfSmith is not trying to be a full browser. It is trying to be a small, controllable, production-friendly HTML-to-PDF engine.
 
-## ✨ Features
+## Features
 
-<table>
-<tr>
-<td width="50%">
+- A4 and Letter pages
+- portrait, landscape, and automatic orientation
+- page headers, page footers, and streaming page numbers
+- document headings, paragraphs, div/section text blocks, lists, blockquotes, pre/code blocks, links, horizontal rules
+- inline rich text: `strong`, `b`, `em`, `i`, `u`, `s`, `del`, `span style`, `a href`, `code`
+- block boxes with margins, padding, borders, background colors, and line-height
+- tables with repeated headers, `thead`, `tbody`, `tfoot`, `colspan`, and basic `rowspan`
+- table CSS: `border`, `border-width`, `border-color`, `padding`, `border-collapse: collapse`
+- row and cell CSS: `background-color`, `color`, `font-size`, `font-weight`, `text-align`
+- image support for PNG, JPEG, SVG, data URLs, local files, and HTTP(S) URLs
+- PNG/JPEG natural aspect-ratio handling when only width or height is provided
+- text and image watermarks
+- custom font paths, font bytes, optional Google Fonts disk cache, and optional system font discovery
+- optional `qpdf` owner-password protection
+- warnings API for non-fatal rendering issues
 
-### 📄 Document Rendering
-- A4 & Letter page sizes
-- Portrait, landscape, or auto orientation
-- Page headers, footers & page numbers
-- Headings (`h1`–`h6`), paragraphs, lists
-- Horizontal rules & line breaks
-- PNG/JPEG images & logos
-
-</td>
-<td width="50%">
-
-### 📊 Table Engine
-- Repeated headers across pages
-- `colspan` & `rowspan` support
-- `border-collapse: collapse`
-- Cell padding & borders
-- Section rows & highlighted cells
-- Parameter/label column styling
-
-</td>
-</tr>
-<tr>
-<td>
-
-### 🎨 Styling & Branding
-- Text & image watermarks (6 patterns)
-- Brand logos in document headers
-- Inline CSS: `font-size`, `font-weight`, `color`, `background-color`, `text-align`
-- Class-based styling for diff/price/section cells
-
-</td>
-<td>
-
-### 🔒 Security & Fonts
-- **Google Fonts** — `font: { googleFont: "Inter" }`
-- Optional `qpdf` owner-password encryption
-- Custom font paths for Latin, Cyrillic, CJK, Arabic
-- Memory-conscious: no auto-loaded system fonts
-- Streaming render — constant memory pressure
-
-</td>
-</tr>
-</table>
-
----
-
-## 🚀 Quickstart
-
-### Install
+## Quickstart
 
 ```bash
 bun add html2pdfsmith
 ```
 
-### Basic Usage
-
-```ts
-import { renderHtmlToPdf } from "html2pdfsmith";
-
-const html = `
-<html>
-<body>
-  <header class="header">
-    <div class="brand-name">ACME CORP</div>
-  </header>
-  <h1>Quarterly Report</h1>
-  <p>Revenue increased by 18% compared with the previous quarter.</p>
-  <table>
-    <thead>
-      <tr><th>Metric</th><th>Q1</th><th>Q2</th></tr>
-    </thead>
-    <tbody>
-      <tr><td>Revenue</td><td>$1.2M</td><td>$1.4M</td></tr>
-      <tr><td>Users</td><td>8,400</td><td>12,100</td></tr>
-    </tbody>
-  </table>
-</body>
-</html>`;
-
-const pdf = await renderHtmlToPdf({ html });
-await Bun.write("report.pdf", pdf);
-```
-
-### With Google Fonts (Recommended)
-
 ```ts
 import { renderHtmlToPdf } from "html2pdfsmith";
 
 const pdf = await renderHtmlToPdf({
-  html,
-  font: { googleFont: "Inter" }, // downloaded once, cached to disk
+  html: `
+    <!doctype html>
+    <html>
+      <body>
+        <h1>Quarterly Report</h1>
+        <p>Revenue increased compared with the previous quarter.</p>
+
+        <table>
+          <thead>
+            <tr><th>Metric</th><th>Q1</th><th>Q2</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Revenue</td><td>$1.2M</td><td>$1.4M</td></tr>
+            <tr><td>Users</td><td>8,400</td><td>12,100</td></tr>
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `,
 });
+
 await Bun.write("report.pdf", pdf);
 ```
 
-### Full-Featured Example
+## Full Example
 
 ```ts
 import { renderHtmlToPdfDetailed } from "html2pdfsmith";
@@ -143,33 +93,32 @@ import { renderHtmlToPdfDetailed } from "html2pdfsmith";
 const result = await renderHtmlToPdfDetailed({
   html,
   repeatHeaders: true,
-  page: { size: "A4", orientation: "landscape" },
+  page: { size: "A4", orientation: "landscape", marginMm: 4 },
   pageHeader: { text: "Quarterly Report", align: "right" },
   pageFooter: { text: "Generated by Html2PdfSmith", align: "left" },
   pageNumbers: { format: "Page {page}", align: "right" },
   watermarkText: "CONFIDENTIAL",
-  watermarkScale: 30,
   watermarkOpacity: 12,
-  userLogoUrl: "https://example.com/logo.png",
-  font: { googleFont: "Roboto" },
+  font: { googleFont: "Inter" },
 });
 
-console.log(`${result.pages} pages, ${result.orientation} orientation`);
-console.log(`Warnings: ${result.warnings.length}`);
+console.log(result.pages, result.orientation, result.warnings);
 await Bun.write("report.pdf", result.pdf);
 ```
 
----
+## API
 
-## 📐 API
+### `renderHtmlToPdf(options)`
 
-### `renderHtmlToPdf(options): Promise<Uint8Array>`
+Returns raw PDF bytes as `Uint8Array`.
 
-Simple API — returns raw PDF bytes.
+```ts
+const pdf = await renderHtmlToPdf({ html });
+```
 
-### `renderHtmlToPdfDetailed(options): Promise<RenderHtmlToPdfResult>`
+### `renderHtmlToPdfDetailed(options)`
 
-Full API — returns PDF bytes plus metadata:
+Returns PDF bytes plus render metadata.
 
 ```ts
 interface RenderHtmlToPdfResult {
@@ -183,95 +132,95 @@ interface RenderHtmlToPdfResult {
 
 ### Options
 
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `html` | `string` | *required* | HTML string to render |
-| `repeatHeaders` | `boolean` | `false` | Repeat `<thead>` on every page |
-| `page.size` | `"A4" \| "LETTER"` | `"A4"` | Page size |
-| `page.orientation` | `"portrait" \| "landscape" \| "auto"` | `"auto"` | Page orientation |
-| `page.marginMm` | `number` | — | Page margin in millimeters |
-| `watermarkText` | `string \| null` | — | Text watermark overlay |
-| `watermarkUrl` | `string \| null` | — | Image watermark URL |
-| `watermarkScale` | `number` | — | Watermark size multiplier |
-| `watermarkOpacity` | `number` | — | Watermark opacity (0–100) |
-| `patternType` | `string` | `"auto"` | Watermark pattern: `auto`, `diagonal`, `triangle`, `corners`, `honeycomb`, `minimal`, `none` |
-| `userLogoUrl` | `string \| null` | — | Logo URL for document header |
-| `logoScale` | `number` | — | Logo size multiplier |
-| `pageHeader` | `object` | — | Repeated header: `{ text, align, fontSize, color }` |
-| `pageFooter` | `object` | — | Repeated footer: `{ text, align, fontSize, color }` |
-| `pageNumbers` | `boolean \| object` | — | Page numbers: `{ format: "Page {page}", align }` |
-| `font.googleFont` | `string` | — | Google Fonts family name (e.g. `"Inter"`, `"Roboto"`). Downloaded once, cached to disk |
-| `font.regularPath` | `string` | — | Path to regular `.ttf`/`.ttc` font |
-| `font.boldPath` | `string` | — | Path to bold `.ttf`/`.ttc` font |
-| `font.autoDiscover` | `boolean` | `false` | Auto-discover system fonts (increases memory) |
-| `protectPdf` | `boolean` | `false` | Apply `qpdf` owner-password protection |
-| `hideHeader` | `boolean` | `false` | Suppress the document header block |
+| Option | Type | Description |
+|---|---|---|
+| `html` | `string` | HTML document string to render |
+| `repeatHeaders` | `boolean` | Repeat table headers on page breaks |
+| `page.size` | `"A4" \| "LETTER"` | PDF page size |
+| `page.orientation` | `"portrait" \| "landscape" \| "auto"` | Page orientation |
+| `page.marginMm` | `number` | Page margin in millimeters |
+| `pageHeader` | `{ text, align, fontSize, color, heightMm }` | Repeated page header |
+| `pageFooter` | `{ text, align, fontSize, color, heightMm }` | Repeated page footer |
+| `pageNumbers` | `boolean \| object` | Streaming page numbers, for example `Page {page}` |
+| `watermarkText` | `string \| null` | Text watermark |
+| `watermarkUrl` | `string \| null` | Image watermark |
+| `watermarkOpacity` | `number` | Watermark opacity, `0..100` or `0..1` |
+| `watermarkScale` | `number` | Watermark size scale |
+| `patternType` | `string` | Watermark pattern hint |
+| `userLogoUrl` | `string \| null` | Logo image for the document header |
+| `font.googleFont` | `string` | Google Fonts family name, cached to disk |
+| `font.googleFonts` | `string[]` | Additional Google Fonts selectable with CSS `font-family` |
+| `font.regularPath` | `string` | Path to regular font |
+| `font.boldPath` | `string` | Path to bold font |
+| `font.italicPath` | `string` | Path to italic font |
+| `font.boldItalicPath` | `string` | Path to bold italic font |
+| `font.regularBytes` | `Uint8Array` | Regular font bytes |
+| `font.boldBytes` | `Uint8Array` | Bold font bytes |
+| `font.italicBytes` | `Uint8Array` | Italic font bytes |
+| `font.boldItalicBytes` | `Uint8Array` | Bold italic font bytes |
+| `font.autoDiscover` | `boolean` | Discover system fonts; convenient but heavier |
+| `protectPdf` | `boolean` | Apply optional qpdf owner-password protection |
+| `qpdfPath` | `string` | Custom qpdf binary path |
+| `hideHeader` | `boolean` | Hide document brand/contact header |
+| `onWarning` | `(warning) => void` | Receive non-fatal render warnings |
 
----
+`{total}` page counts are intentionally not resolved by the default streaming renderer. Use `{page}` for low-memory page numbers. Total page counts require buffering pages or a second pass.
 
-## ⚡ Performance
+## Supported HTML
 
-Benchmarked with a **10-column × 100-row** table + text watermark on Bun ≥ 1.2:
+Html2PdfSmith supports a document-oriented HTML subset:
 
-```
-┌─────────────────────┬────────────┐
-│ Metric              │ Value      │
-├─────────────────────┼────────────┤
-│ Pages rendered      │ 6          │
-│ Render time         │ ~123 ms    │
-│ Incremental RSS     │ ~41 MB     │
-│ PDF size            │ ~10 KB     │
-│ Native binaries     │ 0          │
-└─────────────────────┴────────────┘
-```
+- `html`, `head`, `body`
+- `title`
+- `header` with `.brand-name`
+- `div`, `section`, `article`, `main`, `aside`
+- `h1` through `h6`
+- `p`, `address`, `blockquote`, `pre`, `code`
+- `strong`, `b`, `em`, `i`, `u`, `s`, `del`, `span`, `a`
+- `ul`, `ol`, `li`
+- `table`, `thead`, `tbody`, `tfoot`, `tr`, `th`, `td`
+- `img`, `hr`, `br`
+- text nodes
 
-Run the benchmark yourself:
+Unsupported elements are traversed when possible. Unsupported CSS is ignored rather than failing the render.
 
-```bash
-bun --expose-gc run examples/bench-table.ts      # default 10×100
-bun --expose-gc run examples/bench-table.ts 20 200 --watermark   # 20×200 + watermark
-bun --expose-gc run examples/bench-table.ts 10 100 --auto-font   # with system font discovery
-```
+## Supported CSS
 
----
+The CSS support is intentionally pragmatic:
 
-## 🧩 Supported HTML
+- selector support: tag, class, id, combined simple selectors, and descendant selectors such as `table td`
+- `font-size`
+- `font-weight`
+- `color`
+- `background-color`
+- `text-align`
+- `margin-top`
+- `margin-bottom`
+- `margin`, `margin-left`, `margin-right`
+- `padding`, `padding-top`, `padding-right`, `padding-bottom`, `padding-left`
+- `border`, `border-width`, `border-color`
+- `line-height`
+- `text-decoration`
+- `border-collapse: collapse`
+- `width`, `height` for images and tables
+- `display: none`
+- `visibility: hidden`
+- `page-break-before`, `page-break-after`, `break-before`, `break-after`
 
-### Elements
+Out of scope for now:
 
-| Element | Notes |
-|---|---|
-| `<header>` | Document brand header with `.brand-name` |
-| `<h1>`–`<h6>` | Headings with CSS `font-size`, `color`, `margin` |
-| `<p>` | Paragraphs with inline styles |
-| `<ul>`, `<ol>`, `<li>` | Ordered and unordered lists |
-| `<table>`, `<thead>`, `<tbody>`, `<tr>`, `<th>`, `<td>` | Full table model |
-| `<img>` | PNG/JPEG images with `width`/`height` |
-| `<hr>` | Horizontal rules |
-| `<br>` | Line breaks within cells |
-| `<div>` | Generic container |
+- arbitrary web pages
+- JavaScript execution
+- Flexbox and Grid
+- fixed/absolute positioning
+- CSS transforms and animations
+- full browser-compatible cascade and layout
 
-### CSS Properties
+## Fonts
 
-```
-font-size • font-weight • color • background-color
-text-align • margin-top • margin-bottom
-border • padding • border-collapse
-colspan • rowspan • width • height (images)
-```
+For Latin-only documents, the default built-in PDF fonts are the lightest option.
 
-> [!IMPORTANT]
-> Full CSS cascade, Flexbox, Grid, and JavaScript execution are **intentionally out of scope**. This is a renderer for **predictable document templates**, not arbitrary web pages.
-
----
-
-## 🔤 Font Management
-
-The default renderer uses built-in PDF fonts for Latin text. For extended character sets:
-
-### Google Fonts (Recommended)
-
-The simplest way to use professional fonts — just pass the family name:
+For production documents, prefer explicit fonts or Google Fonts:
 
 ```ts
 const pdf = await renderHtmlToPdf({
@@ -280,120 +229,76 @@ const pdf = await renderHtmlToPdf({
 });
 ```
 
-**How it works:**
-- First render → downloads regular (400) + bold (700) `.ttf` files from the Google Fonts API
-- Saves to disk cache: `~/.cache/html2pdfsmith/fonts/` (Linux) or `%LOCALAPPDATA%\html2pdfsmith\fonts\` (Windows)
-- Subsequent renders → reads from disk cache instantly — **zero network, zero extra RAM**
-
-Popular choices: `Inter`, `Roboto`, `Noto Sans`, `Open Sans`, `Lato`, `Montserrat`, `Source Sans 3`
+Multiple Google Fonts can be preloaded and selected inside tables with CSS:
 
 ```ts
-// Check if a font is already cached (no network call)
-import { isGoogleFontCached, getGoogleFontCacheDir } from "html2pdfsmith";
-
-console.log(isGoogleFontCached("Inter")); // true after first use
-console.log(getGoogleFontCacheDir());     // ~/.cache/html2pdfsmith/fonts/
+const result = await renderHtmlToPdfDetailed({
+  html,
+  font: {
+    googleFont: "Inter",
+    googleFonts: ["Roboto", "Lato", "Merriweather"],
+  },
+});
 ```
 
-### Explicit Font Paths
+```css
+th { font-family: "Inter"; font-weight: 700; text-align: center; }
+td.left { font-family: "Roboto"; text-align: left; padding-left: 14px; }
+td.center { font-family: "Lato"; text-align: center; font-size: 11pt; }
+td.money { font-family: "Merriweather"; text-align: right; font-weight: 700; }
+```
+
+Google Fonts are downloaded on first use and cached to disk. Html2PdfSmith caches regular, bold, italic, and bold italic variants when the family provides them:
+
+- Windows: `%LOCALAPPDATA%/html2pdfsmith/fonts`
+- Linux/macOS: `$XDG_CACHE_HOME/html2pdfsmith/fonts` or `~/.cache/html2pdfsmith/fonts`
+- Override: set `HTML2PDFSMITH_CACHE_DIR=/path/to/cache`
+
+You can also pass explicit font files:
 
 ```ts
 const pdf = await renderHtmlToPdf({
   html,
   font: {
-    regularPath: "/path/to/NotoSans-Regular.ttf",
-    boldPath: "/path/to/NotoSans-Bold.ttf",
+    regularPath: "/fonts/NotoSans-Regular.ttf",
+    boldPath: "/fonts/NotoSans-Bold.ttf",
   },
 });
 ```
 
-### Auto-Discover System Fonts
+For low-memory production targets, avoid auto-discovering large CJK system fonts unless you need them.
 
-```ts
-const pdf = await renderHtmlToPdf({
-  html,
-  font: { autoDiscover: true }, // convenient but heavier on memory
-});
+## Performance
+
+Current local benchmark on Windows/Bun for a 10-column, 100-row table with a text watermark:
+
+```json
+{
+  "pages": 6,
+  "ms": 118,
+  "deltaPeakRssMb": 46.4
+}
 ```
 
-### Priority Order
-
-1. `regularPath` / `boldPath` / `regularBytes` / `boldBytes` (explicit)
-2. `googleFont` (disk-cached TTF)
-3. `autoDiscover` (system fonts)
-4. Built-in Helvetica (fallback)
-
-> [!TIP]
-> For production memory targets under **100 MB**, use `googleFont` or small subset fonts instead of full CJK variable fonts. A full Chinese font can push RSS well above 100 MB.
-
----
-
-## 🔒 PDF Protection
-
-Optional owner-password protection via `qpdf`:
-
-```ts
-const pdf = await renderHtmlToPdf({
-  html,
-  protectPdf: true,
-  qpdfPath: "/usr/bin/qpdf", // optional: custom qpdf binary path
-});
-```
-
-Requires `qpdf` installed on the system.
-
----
-
-## 📁 Project Structure
-
-```
-html2pdfsmith/
-├── src/
-│   ├── index.ts          # Public API exports
-│   ├── types.ts          # TypeScript interfaces
-│   ├── stream-render.ts  # Streaming renderer (default)
-│   ├── render.ts         # Legacy buffered renderer
-│   ├── html.ts           # HTML parser (htmlparser2)
-│   ├── css.ts            # CSS property extraction
-│   ├── text.ts           # Text measurement utilities
-│   ├── units.ts          # Page/font scaling calculations
-│   ├── assets.ts         # Image, watermark & font resolution
-│   ├── google-fonts.ts   # Google Fonts downloader & disk cache
-│   ├── protect.ts        # qpdf integration
-│   ├── compat.ts         # Compatibility wrappers
-│   └── warnings.ts       # Warning system
-├── examples/
-│   ├── simple-table.ts   # Basic table rendering
-│   ├── css-table.ts      # CSS-styled table with all features
-│   ├── simple-document.ts # Document with headings & lists
-│   └── bench-table.ts    # Memory & performance benchmark
-└── docs/
-    ├── scope.md          # Supported features & HTML subset
-    └── memory.md         # Memory budget documentation
-```
-
----
-
-## 🛠️ Development
+Run it locally:
 
 ```bash
-# Run examples
-bun run example                    # simple table
-bun run example:css-table          # CSS table with headers/footers
-bun run example:document           # text document
-
-# Type checking
-bun run typecheck
-
-# Smoke test
-bun run smoke
-
-# Benchmark
-bun run bench
+bun run bench -- 10 100 --watermark
 ```
 
----
+## Development
 
-## 📝 License
+```bash
+bun install
+bun run typecheck
+bun run smoke
+bun run example
+bun run example:css-table
+bun run example:fonts
+bun run example:document
+bun run bench -- 10 100 --watermark
+```
 
-MIT © [YATSKOVSKYI](https://github.com/YATSKOVSKYI)
+## License
+
+MIT
