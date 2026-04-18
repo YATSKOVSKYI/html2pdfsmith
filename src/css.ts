@@ -13,6 +13,7 @@ export interface BoxSpacing {
 export interface BorderStyle {
   width: number;
   color?: string;
+  style?: "solid" | "dashed" | "dotted" | "none";
 }
 
 export interface CssRule {
@@ -273,22 +274,49 @@ function borderWidthPx(value: string | undefined): number | undefined {
   return parseLengthPx(v);
 }
 
+function borderLineStyle(value: string | undefined): BorderStyle["style"] | undefined {
+  if (!value) return undefined;
+  const v = value.trim().toLowerCase();
+  if (v === "solid" || v === "dashed" || v === "dotted" || v === "none") return v;
+  return undefined;
+}
+
+function applyBorderTokens(out: BorderStyle, value: string | undefined): void {
+  if (!value) return;
+  const tokens = value.split(/\s+/).filter(Boolean);
+  for (const token of tokens) {
+    const width = borderWidthPx(token);
+    if (width != null) out.width = width;
+    const color = parseCssColor(token);
+    if (color) out.color = color;
+    const style = borderLineStyle(token);
+    if (style) out.style = style;
+  }
+}
+
 export function parseBorderStyle(styles: StyleMap, fallback: BorderStyle): BorderStyle {
   const out: BorderStyle = { ...fallback };
-  const shorthand = styles["border"];
-  if (shorthand) {
-    const tokens = shorthand.split(/\s+/).filter(Boolean);
-    for (const token of tokens) {
-      const width = borderWidthPx(token);
-      if (width != null) out.width = width;
-      const color = parseCssColor(token);
-      if (color) out.color = color;
-    }
-  }
+  applyBorderTokens(out, styles["border"]);
 
   const width = borderWidthPx(styles["border-width"]);
   if (width != null) out.width = width;
   const color = parseCssColor(styles["border-color"]);
   if (color) out.color = color;
+  const style = borderLineStyle(styles["border-style"]);
+  if (style) out.style = style;
+  return out;
+}
+
+export function parseBorderSideStyle(styles: StyleMap, side: "top" | "right" | "bottom" | "left", fallback: BorderStyle): BorderStyle {
+  const out = parseBorderStyle(styles, fallback);
+  applyBorderTokens(out, styles[`border-${side}`]);
+
+  const width = borderWidthPx(styles[`border-${side}-width`]);
+  if (width != null) out.width = width;
+  const color = parseCssColor(styles[`border-${side}-color`]);
+  if (color) out.color = color;
+  const style = borderLineStyle(styles[`border-${side}-style`]);
+  if (style) out.style = style;
+  if (out.style === "none") out.width = 0;
   return out;
 }

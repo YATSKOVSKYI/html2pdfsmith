@@ -99,7 +99,12 @@ function sameInlineStyle(a: ParsedInlineSegment, b: ParsedInlineSegment): boolea
 function normalizeInlineSegments(segments: ParsedInlineSegment[]): ParsedInlineSegment[] {
   const normalized: ParsedInlineSegment[] = [];
   for (const segment of segments) {
-    const text = segment.text.replace(/\u00a0/g, " ").replace(/[ \t\r\f\v\n]+/g, " ");
+    const whiteSpace = (segment.styles["white-space"] ?? "").trim().toLowerCase();
+    const text = whiteSpace === "pre-line"
+      ? segment.text.replace(/\u00a0/g, " ").replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/[ \t\f\v]+/g, " ")
+      : whiteSpace === "pre-wrap"
+        ? segment.text.replace(/\u00a0/g, " ").replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+        : segment.text.replace(/\u00a0/g, " ").replace(/[ \t\r\f\v\n]+/g, " ");
     if (!text) continue;
     const previous = normalized[normalized.length - 1];
     if (previous && sameInlineStyle(previous, segment)) {
@@ -226,6 +231,17 @@ function maxColumns(rows: ParsedRow[]): number {
   );
 }
 
+function parseColumnStyles(tableEl: Element, rules: CssRule[]): Record<string, string>[] {
+  const colgroup = findFirst(tableEl, (el) => el.name.toLowerCase() === "colgroup");
+  if (!colgroup) return [];
+  return directElementChildren(colgroup, "col").map((col) => {
+    const styles = resolveElementStyle(col, rules);
+    const width = attr(col, "width").trim();
+    if (width && !styles["width"]) styles["width"] = width;
+    return styles;
+  });
+}
+
 function normalizeRowspans(rows: ParsedRow[], columnCount: number): ParsedRow[] {
   const active: Array<{ remaining: number; cell: ParsedCell } | undefined> = [];
   const normalized: ParsedRow[] = [];
@@ -307,11 +323,13 @@ function parseTable(tableEl: Element, rules: CssRule[]): ParsedTable {
     : [];
 
   const columnCount = Math.max(1, maxColumns([...headRows, ...bodyRows, ...footRows]));
+  const columnStyles = parseColumnStyles(tableEl, rules);
 
   return {
     headRows: normalizeRowspans(headRows, columnCount),
     bodyRows: normalizeRowspans([...bodyRows, ...footRows], columnCount),
     columnCount,
+    columnStyles,
     repeatHeader: theadStyles["display"]?.trim().toLowerCase() === "table-header-group",
   };
 }

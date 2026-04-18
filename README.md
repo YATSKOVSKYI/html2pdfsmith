@@ -46,6 +46,8 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 - row and cell CSS: `background-color`, `color`, `font-size`, `font-weight`, `text-align`, `vertical-align`, `height`, `min-height`
 - cell image CSS: `width`, `height`, `object-fit`, `object-position`
 - cross-platform image transforms: `transform`, `transform-origin`, `-webkit-transform`, `-webkit-transform-origin`, `opacity`
+- table layout controls: `colgroup`, `table-layout: fixed`, `white-space`, `text-overflow: ellipsis`
+- per-side borders: `border-top`, `border-right`, `border-bottom`, `border-left`, dashed and dotted lines
 - image support for PNG, JPEG, SVG, data URLs, local files, and HTTP(S) URLs
 - PNG/JPEG natural aspect-ratio handling when only width or height is provided
 - text and image watermarks
@@ -276,9 +278,14 @@ The CSS support is intentionally pragmatic:
 - `margin`, `margin-left`, `margin-right`
 - `padding`, `padding-top`, `padding-right`, `padding-bottom`, `padding-left`
 - `border`, `border-width`, `border-color`
+- `border-style: solid`, `border-style: dashed`, `border-style: dotted`, `border-style: none`
+- `border-top`, `border-right`, `border-bottom`, `border-left`
+- `border-*-width`, `border-*-style`, `border-*-color`
 - `line-height`
 - `text-decoration`
 - `border-collapse: collapse`
+- `table-layout: fixed`
+- `colgroup` / `col style="width: ..."` for table column widths
 - `width`, `height` for images and tables
 - `height`, `min-height` for table rows and cells
 - `object-fit: contain`, `object-fit: cover`, `object-fit: fill` for images in table cells
@@ -291,6 +298,8 @@ The CSS support is intentionally pragmatic:
 - `page-break-before`, `page-break-after`, `break-before`, `break-after`
 - `@page { size: A4 landscape; margin: 8mm }`
 - `overflow-wrap: break-word`, `overflow-wrap: anywhere`, `word-break: break-word`, `word-break: break-all`
+- `white-space: nowrap`, `white-space: pre-line`, `white-space: pre-wrap`
+- `text-overflow: ellipsis` with `white-space: nowrap`
 - `thead { display: table-header-group }` for repeated table headers on page breaks
 
 Out of scope for now:
@@ -386,6 +395,42 @@ td.apple-template img {
 ```
 
 The `-webkit-*` aliases are parsed for Safari/Apple-authored templates, but the render path is the same cross-platform PDF transform engine on Windows, Linux, macOS, and Bun runtimes.
+
+Tables can use fixed column widths and text overflow controls:
+
+```html
+<table>
+  <colgroup>
+    <col style="width: 90px">
+    <col style="width: 180px">
+    <col style="width: 35%">
+    <col>
+  </colgroup>
+  ...
+</table>
+```
+
+```css
+table {
+  table-layout: fixed;
+}
+
+td.vin {
+  white-space: nowrap;
+}
+
+td.title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+td.custom-border {
+  border-left: 3px solid #2563eb;
+  border-right: 2px dashed #d97706;
+  border-bottom: 2px dotted #059669;
+}
+```
 
 For merged table cells, the renderer groups rows connected by `rowspan` and keeps that group on one page whenever it fits on a fresh page. A section row immediately before a rowspan group, such as `<tr><td colspan="5">Section</td></tr>`, is kept with that group too. If the merged group is taller than a fresh page, Html2PdfSmith renders it sequentially and emits a warning instead of silently hiding the edge case.
 
@@ -526,6 +571,7 @@ bun run example:merged-table
 bun run example:wide-table
 bun run example:alignment
 bun run example:transform
+bun run example:layout
 bun run example:document
 bun run bench -- 10 100 --watermark
 ```

@@ -226,6 +226,31 @@ if (transformsLoaded.getPageCount() !== transforms.pages) {
 }
 console.log({ name: "transform-controls", pages: transforms.pages, bytes: transforms.pdf.byteLength, warnings: transforms.warnings.length });
 
+const layoutControls = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+    th, td { border: 1px solid #bbb; padding: 6px; height: 48px; }
+    th { border-bottom: 2px solid #222; }
+    .nowrap { white-space: nowrap; }
+    .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pre { white-space: pre-line; }
+    .sides { border-left: 3px solid #2563eb; border-right: 2px dashed #d97706; border-bottom: 2px dotted #059669; }
+  </style></head><body>
+    <table>
+      <colgroup><col style="width: 70px"><col style="width: 120px"><col style="width: 30%"><col></colgroup>
+      <thead><tr><th>ID</th><th>No wrap</th><th>Ellipsis</th><th>Pre</th></tr></thead>
+      <tbody><tr><td class="sides">1</td><td class="nowrap">VIN-UNBROKEN-123456789</td><td class="ellipsis">Very long text value that should be shortened with an ellipsis</td><td class="pre">One
+Two</td></tr></tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+});
+const layoutLoaded = await PDFDocument.load(layoutControls.pdf);
+if (layoutLoaded.getPageCount() !== layoutControls.pages) {
+  throw new Error("layout controls: reported page count mismatch");
+}
+console.log({ name: "layout-controls", pages: layoutControls.pages, bytes: layoutControls.pdf.byteLength, warnings: layoutControls.warnings.length });
+
 await assertPdf("document-blocks", `<!doctype html><html><body>
   <style>
     .quote { background-color: #f6f8fa; border-color: #94a3b8; }

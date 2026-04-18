@@ -208,6 +208,7 @@ export interface ParsedTable {
   headRows: ParsedRow[];
   bodyRows: ParsedRow[];
   columnCount: number;
+  columnStyles?: Record<string, string>[];
   repeatHeader?: boolean;
 }
 

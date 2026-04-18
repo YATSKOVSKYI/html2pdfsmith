@@ -18,10 +18,12 @@
 - repeated table headers
 - large tables with many columns
 - horizontal wide-table pagination with repeated left columns
+- fixed table layout with `colgroup` column widths
 - cell background colors for highlights
 - section rows
 - horizontal and vertical cell alignment
 - text wrapping
+- nowrap, pre-line/pre-wrap, and ellipsis text overflow
 - row-level pagination with rowspan group avoidance
 - PNG/JPEG images
 - text and image watermarks
@@ -58,12 +60,15 @@ CSS support is intentionally pragmatic. The renderer recognizes common class nam
 - price/header cells
 - simple background colors
 - table `border`
+- per-side table/cell borders with solid, dashed, dotted, and none styles
 - table/cell `padding`
 - table `border-collapse: collapse`
+- table `table-layout: fixed` and `colgroup` widths
 - `colspan`, `rowspan`, and merged-cell grid normalization
 - body `colspan`-aware horizontal table breaks
 - row-level `background-color`, `color`, `font-size`, and `text-align`
 - row/cell `height`, `min-height`, and `vertical-align`
+- `white-space` and `text-overflow`
 - cell image `width`, `height`, `object-fit`, and `object-position`
 - image `opacity`, `transform`, `transform-origin`, and `-webkit-transform` aliases
 - block `margin`, `padding`, and `border`

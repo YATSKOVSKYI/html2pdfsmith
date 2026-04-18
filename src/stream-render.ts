@@ -3,7 +3,7 @@ import SVGtoPDF from "svg-to-pdfkit";
 import { Buffer } from "node:buffer";
 import { existsSync } from "node:fs";
 import { discoverFontPaths, loadImage, resolveFontPaths } from "./assets";
-import { parseBorderStyle, parseBoxSpacing, parseCssColor, parseLengthPx, type BoxSpacing, type BorderStyle, type StyleMap } from "./css";
+import { parseBorderSideStyle, parseBorderStyle, parseBoxSpacing, parseCssColor, parseLengthPx, type BoxSpacing, type BorderStyle, type StyleMap } from "./css";
 import { resolveGoogleFont } from "./google-fonts";
 import { parsePrintableHtml } from "./html";
 import { loadResource, prepareHtmlForRender } from "./resources";
@@ -107,6 +107,14 @@ interface CssTransformOrigin {
 interface TableRenderStyle {
   borderCollapse: boolean;
   border: BorderStyle;
+  layout: "auto" | "fixed";
+}
+
+interface CellBorderStyle {
+  top: BorderStyle;
+  right: BorderStyle;
+  bottom: BorderStyle;
+  left: BorderStyle;
 }
 
 interface TextBoxStyle {
@@ -179,6 +187,30 @@ function computeColumnWidths(columns: number, contentWidth: number): number[] {
   return [labelWidth, ...Array.from({ length: dataColumns }, () => dataWidth)];
 }
 
+function computeColumnWidthsFromStyles(table: ParsedTable, contentWidth: number): number[] {
+  const styles = table.columnStyles ?? [];
+  if (styles.length === 0) return computeColumnWidths(table.columnCount, contentWidth);
+
+  const widths = Array.from({ length: table.columnCount }, (_, index) => cssLengthPt(styles[index]?.["width"], contentWidth));
+  const fixedTotal = widths.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+  const missing = widths.filter((value) => value == null).length;
+  const remaining = Math.max(0, contentWidth - fixedTotal);
+
+  if (missing === 0 && fixedTotal > 0) {
+    const scale = contentWidth / fixedTotal;
+    return widths.map((value) => Math.max(1, (value ?? 0) * scale));
+  }
+
+  const fallback = missing > 0 ? remaining / missing : 0;
+  return widths.map((value) => Math.max(1, value ?? fallback));
+}
+
+function computeTableColumnWidths(table: ParsedTable, contentWidth: number, style: TableRenderStyle): number[] {
+  if ((table.columnStyles?.length ?? 0) > 0) return computeColumnWidthsFromStyles(table, contentWidth);
+  if (style.layout === "fixed") return Array.from({ length: table.columnCount }, () => contentWidth / table.columnCount);
+  return computeColumnWidths(table.columnCount, contentWidth);
+}
+
 function pxToPt(value: number): number {
   return value * 72 / 96;
 }
@@ -218,48 +250,52 @@ function spacingPt(styles: StyleMap, property: "padding" | "margin", fallback: B
 function borderPxToPt(border: BorderStyle): BorderStyle {
   const out: BorderStyle = { width: pxToPt(border.width) };
   if (border.color) out.color = border.color;
+  if (border.style) out.style = border.style;
   return out;
 }
 
-function cellBorder(ctx: StreamContext, cell: ParsedCell): BorderStyle {
-  return borderPxToPt(parseBorderStyle(cell.styles, {
+function cellBorders(ctx: StreamContext, cell: ParsedCell): CellBorderStyle {
+  const fallback = {
     width: ctx.currentTableStyle.border.width * 96 / 72,
     color: cell.isParam ? COLORS.border : ctx.currentTableStyle.border.color ?? COLORS.grid,
-  }));
+    style: ctx.currentTableStyle.border.style ?? "solid",
+  } satisfies BorderStyle;
+  return {
+    top: borderPxToPt(parseBorderSideStyle(cell.styles, "top", fallback)),
+    right: borderPxToPt(parseBorderSideStyle(cell.styles, "right", fallback)),
+    bottom: borderPxToPt(parseBorderSideStyle(cell.styles, "bottom", fallback)),
+    left: borderPxToPt(parseBorderSideStyle(cell.styles, "left", fallback)),
+  };
 }
 
-function strokeCellBorder(ctx: StreamContext, cell: ParsedCell, x: number, y: number, width: number, height: number, border: BorderStyle): void {
-  if (border.width <= 0) return;
+function strokeBorderLine(ctx: StreamContext, border: BorderStyle, x1: number, y1: number, x2: number, y2: number, fallbackColor: string): void {
+  if (border.width <= 0 || border.style === "none") return;
   const lineWidth = ctx.currentTableStyle.borderCollapse ? Math.max(0.2, border.width * 0.75) : border.width;
-  const color = border.color ?? (cell.isParam ? COLORS.border : COLORS.grid);
-
   ctx.doc.save();
-  ctx.doc.strokeColor(color).lineWidth(lineWidth);
-
-  if (!cell.isSpanPlaceholder && cell.rowspan <= 1) {
-    ctx.doc.rect(x, y, width, height).stroke();
-    ctx.doc.restore();
-    return;
-  }
-
-  ctx.doc.moveTo(x, y).lineTo(x, y + height);
-  ctx.doc.moveTo(x + width, y).lineTo(x + width, y + height);
-
-  if (!cell.isSpanPlaceholder) {
-    ctx.doc.moveTo(x, y).lineTo(x + width, y);
-  }
-  if (cell.isSpanPlaceholderEnd) {
-    ctx.doc.moveTo(x, y + height).lineTo(x + width, y + height);
-  }
-
-  ctx.doc.stroke();
+  ctx.doc.strokeColor(border.color ?? fallbackColor).lineWidth(lineWidth);
+  if (border.style === "dashed") ctx.doc.dash(Math.max(2, lineWidth * 3), { space: Math.max(2, lineWidth * 2) });
+  if (border.style === "dotted") ctx.doc.dash(Math.max(0.7, lineWidth), { space: Math.max(1.4, lineWidth * 2) });
+  ctx.doc.moveTo(x1, y1).lineTo(x2, y2).stroke();
+  ctx.doc.undash();
   ctx.doc.restore();
+}
+
+function strokeCellBorder(ctx: StreamContext, cell: ParsedCell, x: number, y: number, width: number, height: number, border: CellBorderStyle): void {
+  const fallbackColor = cell.isParam ? COLORS.border : COLORS.grid;
+
+  strokeBorderLine(ctx, border.left, x, y, x, y + height, fallbackColor);
+  strokeBorderLine(ctx, border.right, x + width, y, x + width, y + height, fallbackColor);
+  if (!cell.isSpanPlaceholder) strokeBorderLine(ctx, border.top, x, y, x + width, y, fallbackColor);
+  if (!cell.isSpanPlaceholder && cell.rowspan <= 1 || cell.isSpanPlaceholderEnd) {
+    strokeBorderLine(ctx, border.bottom, x, y + height, x + width, y + height, fallbackColor);
+  }
 }
 
 function tableStyle(style: StyleMap): TableRenderStyle {
   return {
     borderCollapse: (style["border-collapse"] ?? "").trim().toLowerCase() === "collapse",
-    border: borderPxToPt(parseBorderStyle(style, { width: 0.45 * 96 / 72, color: COLORS.grid })),
+    border: borderPxToPt(parseBorderStyle(style, { width: 0.45 * 96 / 72, color: COLORS.grid, style: "solid" })),
+    layout: (style["table-layout"] ?? "").trim().toLowerCase() === "fixed" ? "fixed" : "auto",
   };
 }
 
@@ -966,11 +1002,22 @@ function inlineColor(segment: ParsedInlineSegment, fallbackColor: string): strin
 }
 
 function wrapModeFromStyle(style: StyleMap, fallback: TextOverflowWrap | undefined): TextOverflowWrap {
+  const whiteSpace = (style["white-space"] ?? "").trim().toLowerCase();
+  if (whiteSpace === "nowrap" || whiteSpace === "pre") return "normal";
   const overflowWrap = (style["overflow-wrap"] ?? style["word-wrap"] ?? "").trim().toLowerCase();
   const wordBreak = (style["word-break"] ?? "").trim().toLowerCase();
   if (overflowWrap === "anywhere" || wordBreak === "break-all") return "anywhere";
   if (overflowWrap === "break-word" || wordBreak === "break-word") return "break-word";
   return fallback ?? "normal";
+}
+
+function isNoWrapStyle(style: StyleMap): boolean {
+  const value = (style["white-space"] ?? "").trim().toLowerCase();
+  return value === "nowrap" || value === "pre";
+}
+
+function wantsEllipsis(style: StyleMap): boolean {
+  return (style["text-overflow"] ?? "").trim().toLowerCase() === "ellipsis";
 }
 
 function breakLongToken(doc: PdfKitDocument, font: string, size: number, token: string, width: number): string {
@@ -1003,11 +1050,44 @@ function wrappedInlineSegments(ctx: StreamContext, inlines: ParsedInlineSegment[
   return inlines.map((segment) => ({ ...segment, text: wrapSegmentText(ctx, segment, fallbackFont, fallbackSize, width) }));
 }
 
-function inlineTextHeight(ctx: StreamContext, text: string, inlines: ParsedInlineSegment[], fallbackFont: string, fallbackSize: number, width: number, lineGap: number): number {
+function ellipsizeText(ctx: StreamContext, text: string, font: string, size: number, width: number): string {
+  const marker = "...";
+  ctx.doc.font(font).fontSize(size);
+  if (ctx.doc.widthOfString(text) <= width) return text;
+  if (ctx.doc.widthOfString(marker) > width) return "";
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (ctx.doc.widthOfString(text.slice(0, mid) + marker) <= width) lo = mid;
+    else hi = mid - 1;
+  }
+  return text.slice(0, lo).trimEnd() + marker;
+}
+
+function displayInlineSegments(
+  ctx: StreamContext,
+  text: string,
+  inlines: ParsedInlineSegment[],
+  fallbackFont: string,
+  fallbackSize: number,
+  width: number,
+  style: StyleMap,
+): ParsedInlineSegment[] {
+  const base = inlines.length > 0 ? inlines : [{ text, styles: style }];
+  if (isNoWrapStyle(style) && wantsEllipsis(style)) {
+    const plain = base.map((segment) => segment.text).join("").replace(/\n+/g, " ");
+    return [{ text: ellipsizeText(ctx, plain, fallbackFont, fallbackSize, width), styles: base[0]?.styles ?? style }];
+  }
+  return wrappedInlineSegments(ctx, base, fallbackFont, fallbackSize, width);
+}
+
+function inlineTextHeight(ctx: StreamContext, text: string, inlines: ParsedInlineSegment[], fallbackFont: string, fallbackSize: number, width: number, lineGap: number, noWrap = false): number {
   const maxSize = Math.max(fallbackSize, ...inlines.map((segment) => inlineSize(segment, fallbackSize)));
-  const wrappedText = wrappedInlineSegments(ctx, inlines.length > 0 ? inlines : [{ text, styles: {} }], fallbackFont, fallbackSize, width).map((segment) => segment.text).join("");
+  const source = inlines.length > 0 ? inlines : [{ text, styles: {} }];
+  const wrappedText = (noWrap ? source : wrappedInlineSegments(ctx, source, fallbackFont, fallbackSize, width)).map((segment) => segment.text).join("");
   ctx.doc.font(fallbackFont).fontSize(maxSize);
-  return ctx.doc.heightOfString(wrappedText || " ", { width, lineGap });
+  return ctx.doc.heightOfString(wrappedText || " ", { width: noWrap ? 100000 : width, lineGap, lineBreak: !noWrap });
 }
 
 function drawInlineText(
@@ -1022,15 +1102,31 @@ function drawInlineText(
   fallbackColor: string,
   lineGap: number,
   align: "left" | "center" | "right",
+  noWrap = false,
 ): void {
-  const segments = wrappedInlineSegments(ctx, inlines.length > 0 ? inlines : [{ text, styles: {} }], fallbackFont, fallbackSize, width);
+  const source = inlines.length > 0 ? inlines : [{ text, styles: {} }];
+  const segments = noWrap ? source : wrappedInlineSegments(ctx, source, fallbackFont, fallbackSize, width);
+  const noWrapWidth = noWrap
+    ? Math.max(1, segments.reduce((sum, segment) => {
+      ctx.doc.font(inlineFont(ctx, segment, fallbackFont)).fontSize(inlineSize(segment, fallbackSize));
+      return sum + ctx.doc.widthOfString(segment.text);
+    }, 0))
+    : width;
+  const drawX = noWrap && align === "right"
+    ? x + width - noWrapWidth
+    : noWrap && align === "center"
+      ? x + (width - noWrapWidth) / 2
+      : x;
+  const drawWidth = noWrap ? Math.max(width, noWrapWidth + 2) : width;
+  const drawAlign = noWrap ? "left" : align;
   let first = true;
   for (const segment of segments) {
     const decoration = (segment.styles["text-decoration"] ?? "").toLowerCase();
     const options = {
-      width,
+      width: drawWidth,
       lineGap,
-      align,
+      align: drawAlign,
+      lineBreak: !noWrap,
       continued: !segment.text.endsWith("\n") && segment !== segments[segments.length - 1],
       underline: decoration.includes("underline"),
       strike: decoration.includes("line-through"),
@@ -1041,7 +1137,7 @@ function drawInlineText(
       .fontSize(inlineSize(segment, fallbackSize))
       .fillColor(inlineColor(segment, fallbackColor));
     if (first) {
-      ctx.doc.text(segment.text, x, y, options);
+      ctx.doc.text(segment.text, drawX, y, options);
       first = false;
     } else {
       ctx.doc.text(segment.text, options);
@@ -1201,8 +1297,10 @@ function estimateRowHeight(ctx: StreamContext, row: ParsedRow, capToPage = true)
     const padding = cellPadding(ctx, cell);
     const lineGap = lineGapForStyle({ ...row.styles, ...cell.styles }, size, 0.18);
     const contentWidth = Math.max(12, width - padding.left - padding.right);
+    const cellTextStyle = { ...row.styles, ...cell.styles };
+    const noWrap = isNoWrapStyle(cellTextStyle);
     const textContentHeight = cell.text || cell.inlines.length > 0
-      ? inlineTextHeight(ctx, cell.text, cell.inlines, font, size, contentWidth, lineGap)
+      ? inlineTextHeight(ctx, cell.text, cell.inlines, font, size, contentWidth, lineGap, noWrap)
       : 0;
     const imageContentHeight = estimatedCellImageHeight(ctx, cell, contentWidth);
     const cssCellHeight = styleBoxHeight(cell.styles, ctx.contentBottom - ctx.contentTop);
@@ -1248,7 +1346,7 @@ async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promi
     const span = Math.max(1, cell.colspan);
     const width = ctx.columnWidths.slice(col, col + span).reduce((sum, value) => sum + value, 0);
     const padding = cellPadding(ctx, cell);
-    const border = cellBorder(ctx, cell);
+    const border = cellBorders(ctx, cell);
     const fill = cell.isDiff
       ? (parseCssColor(cell.styles["background-color"]) ?? COLORS.diffBg)
       : row.kind === "header" || row.kind === "price"
@@ -1295,12 +1393,15 @@ async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promi
     }
 
     const textColor = parseCssColor(cell.styles["color"]) ?? parseCssColor(row.styles["color"]) ?? COLORS.text;
-    const lineGap = lineGapForStyle({ ...row.styles, ...cell.styles }, size, 0.18);
-    const textBlockHeight = inlineTextHeight(ctx, cell.text, cell.inlines, font, size, contentWidth, lineGap);
+    const cellTextStyle = { ...row.styles, ...cell.styles };
+    const noWrap = isNoWrapStyle(cellTextStyle);
+    const displayInlines = displayInlineSegments(ctx, cell.text, cell.inlines, font, size, contentWidth, cellTextStyle);
+    const lineGap = lineGapForStyle(cellTextStyle, size, 0.18);
+    const textBlockHeight = inlineTextHeight(ctx, cell.text, displayInlines, font, size, contentWidth, lineGap, noWrap);
     const textY = verticalContentY(contentY, contentHeight, textBlockHeight, verticalAlign);
     ctx.doc.save();
     ctx.doc.rect(contentX, contentY, contentWidth, contentHeight).clip();
-    drawInlineText(ctx, cell.text, cell.inlines, contentX, textY, contentWidth, font, size, textColor, lineGap, align);
+    drawInlineText(ctx, cell.text, displayInlines, contentX, textY, contentWidth, font, size, textColor, lineGap, align, noWrap);
     ctx.doc.restore();
 
     x += width;
@@ -1566,6 +1667,7 @@ function sliceTableByColumns(table: ParsedTable, columns: number[]): { table: Pa
       headRows,
       bodyRows,
       columnCount: columns.length,
+      columnStyles: columns.map((column) => table.columnStyles?.[column] ?? {}),
     },
     splitBodyColspan,
   };
@@ -1580,7 +1682,7 @@ async function drawSingleTableBlock(ctx: StreamContext, table: ParsedTable, styl
   ctx.columns = table.columnCount;
   ctx.tableWidth = clamp(width, Math.min(previousTableWidth, 120), previousTableWidth);
   ctx.currentTableStyle = tableStyle(style);
-  ctx.columnWidths = computeColumnWidths(table.columnCount, ctx.tableWidth);
+  ctx.columnWidths = computeTableColumnWidths(table, ctx.tableWidth, ctx.currentTableStyle);
   const repeat = shouldRepeatTableHeaders(ctx, table);
   const groups = groupRowsByRowspan(ctx, table.bodyRows);
   const firstGroup = groups[0];
