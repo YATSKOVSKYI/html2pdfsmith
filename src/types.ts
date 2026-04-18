@@ -233,6 +233,7 @@ export interface ParsedCell {
   isSpanPlaceholder?: boolean;
   isSpanPlaceholderEnd?: boolean;
   imageSrc?: string;
+  imageStyles?: Record<string, string>;
 }
 
 export interface RendererStats {

@@ -173,6 +173,32 @@ if (wideLoaded.getPageCount() !== wideTable.pages || wideTable.pages < 2) {
 }
 console.log({ name: "wide-table-pagination", pages: wideTable.pages, bytes: wideTable.pdf.byteLength, warnings: wideTable.warnings.length });
 
+const alignmentIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="8" y="8" width="48" height="48" rx="10" fill="#2563eb"/><circle cx="32" cy="30" r="11" fill="#fff"/></svg>`)}`;
+const alignment = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #bbb; padding: 6px; height: 72px; }
+    .top { vertical-align: top; text-align: left; }
+    .middle { vertical-align: middle; text-align: center; }
+    .bottom { vertical-align: bottom; text-align: right; }
+    img { width: 28px; height: 28px; object-fit: contain; }
+  </style></head><body>
+    <table>
+      <tbody>
+        <tr><td class="top">Top</td><td class="middle">Middle</td><td class="bottom">Bottom</td></tr>
+        <tr><td class="top"><img src="${alignmentIcon}"></td><td class="middle"><img src="${alignmentIcon}"></td><td class="bottom"><img src="${alignmentIcon}"></td></tr>
+      </tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  resourcePolicy: { allowData: true },
+});
+const alignmentLoaded = await PDFDocument.load(alignment.pdf);
+if (alignmentLoaded.getPageCount() !== alignment.pages) {
+  throw new Error("alignment: reported page count mismatch");
+}
+console.log({ name: "alignment-controls", pages: alignment.pages, bytes: alignment.pdf.byteLength, warnings: alignment.warnings.length });
+
 await assertPdf("document-blocks", `<!doctype html><html><body>
   <style>
     .quote { background-color: #f6f8fa; border-color: #94a3b8; }

@@ -148,10 +148,16 @@ function inlineText(segments: ParsedInlineSegment[]): string {
   return normalizeWhitespace(segments.map((segment) => segment.text).join(""));
 }
 
-function firstImageSrc(el: Element): string | undefined {
+function firstImageInfo(el: Element, rules: CssRule[]): { src: string; styles: Record<string, string> } | undefined {
   const img = findFirst(el, (node) => node.name.toLowerCase() === "img");
   const src = img ? attr(img, "src").trim() : "";
-  return src || undefined;
+  if (!img || !src) return undefined;
+  const styles = resolveElementStyle(img, rules);
+  const width = attr(img, "width").trim();
+  const height = attr(img, "height").trim();
+  if (width && !styles["width"]) styles["width"] = width;
+  if (height && !styles["height"]) styles["height"] = height;
+  return { src, styles };
 }
 
 function parseIntAttr(el: Element, name: string, fallback: number): number {
@@ -187,8 +193,11 @@ function parseCell(el: Element, rules: CssRule[]): ParsedCell {
     isSection,
   };
 
-  const imageSrc = firstImageSrc(el);
-  if (imageSrc) cell.imageSrc = imageSrc;
+  const image = firstImageInfo(el, rules);
+  if (image) {
+    cell.imageSrc = image.src;
+    cell.imageStyles = image.styles;
+  }
   return cell;
 }
 
@@ -228,7 +237,7 @@ function normalizeRowspans(rows: ParsedRow[], columnCount: number): ParsedRow[] 
     for (let col = 0; col < columnCount;) {
       const activeCell = active[col];
       if (activeCell && activeCell.remaining > 0) {
-        const { imageSrc: _imageSrc, ...cellWithoutImage } = activeCell.cell;
+        const { imageSrc: _imageSrc, imageStyles: _imageStyles, ...cellWithoutImage } = activeCell.cell;
         const placeholder: ParsedCell = {
           ...cellWithoutImage,
           text: "",
@@ -375,6 +384,10 @@ function parseFlowBlocks(nodes: AnyNode[], rules: CssRule[], blocks: ParsedBlock
     }
     if (name === "img") {
       const src = attr(node, "src").trim();
+      const width = attr(node, "width").trim();
+      const height = attr(node, "height").trim();
+      if (width && !style["width"]) style["width"] = width;
+      if (height && !style["height"]) style["height"] = height;
       if (src) blocks.push({ type: "image", src, alt: attr(node, "alt"), style });
       if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
       return;

@@ -43,7 +43,8 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 - block boxes with margins, padding, borders, background colors, and line-height
 - tables with repeated headers, horizontal wide-table pagination, `thead`, `tbody`, `tfoot`, `colspan`, and basic `rowspan`
 - table CSS: `border`, `border-width`, `border-color`, `padding`, `border-collapse: collapse`
-- row and cell CSS: `background-color`, `color`, `font-size`, `font-weight`, `text-align`
+- row and cell CSS: `background-color`, `color`, `font-size`, `font-weight`, `text-align`, `vertical-align`, `height`, `min-height`
+- cell image CSS: `width`, `height`, `object-fit`, `object-position`
 - image support for PNG, JPEG, SVG, data URLs, local files, and HTTP(S) URLs
 - PNG/JPEG natural aspect-ratio handling when only width or height is provided
 - text and image watermarks
@@ -268,6 +269,7 @@ The CSS support is intentionally pragmatic:
 - `color`
 - `background-color`
 - `text-align`
+- `vertical-align: top`, `vertical-align: middle`, `vertical-align: bottom` for table cells
 - `margin-top`
 - `margin-bottom`
 - `margin`, `margin-left`, `margin-right`
@@ -277,6 +279,9 @@ The CSS support is intentionally pragmatic:
 - `text-decoration`
 - `border-collapse: collapse`
 - `width`, `height` for images and tables
+- `height`, `min-height` for table rows and cells
+- `object-fit: contain`, `object-fit: cover`, `object-fit: fill` for images in table cells
+- `object-position` keywords such as `left top`, `center center`, `right bottom`
 - `display: none`
 - `visibility: hidden`
 - `page-break-before`, `page-break-after`, `break-before`, `break-after`
@@ -341,6 +346,23 @@ await renderHtmlToPdfDetailed({
 ```css
 td {
   overflow-wrap: anywhere;
+}
+```
+
+Tall table cells can align content horizontally and vertically:
+
+```css
+td.logo {
+  height: 80px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+td.logo img {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  object-position: center center;
 }
 ```
 
@@ -481,6 +503,7 @@ bun run example:font-face
 bun run example:page-wrap-repeat
 bun run example:merged-table
 bun run example:wide-table
+bun run example:alignment
 bun run example:document
 bun run bench -- 10 100 --watermark
 ```

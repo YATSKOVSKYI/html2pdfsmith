@@ -20,6 +20,7 @@
 - horizontal wide-table pagination with repeated left columns
 - cell background colors for highlights
 - section rows
+- horizontal and vertical cell alignment
 - text wrapping
 - row-level pagination with rowspan group avoidance
 - PNG/JPEG images
@@ -62,6 +63,8 @@ CSS support is intentionally pragmatic. The renderer recognizes common class nam
 - `colspan`, `rowspan`, and merged-cell grid normalization
 - body `colspan`-aware horizontal table breaks
 - row-level `background-color`, `color`, `font-size`, and `text-align`
+- row/cell `height`, `min-height`, and `vertical-align`
+- cell image `width`, `height`, `object-fit`, and `object-position`
 - block `margin`, `padding`, and `border`
 - `line-height`
 - `text-decoration`

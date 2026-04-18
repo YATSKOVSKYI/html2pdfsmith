@@ -91,6 +91,19 @@ interface ImageDimensions {
   height: number;
 }
 
+type CellVerticalAlign = "top" | "middle" | "bottom";
+type ObjectFitMode = "contain" | "cover" | "fill";
+
+interface ObjectPosition {
+  x: "left" | "center" | "right";
+  y: "top" | "center" | "bottom";
+}
+
+interface CssTransformOrigin {
+  x: number;
+  y: number;
+}
+
 interface TableRenderStyle {
   borderCollapse: boolean;
   border: BorderStyle;
@@ -452,20 +465,202 @@ function getAsset(ctx: StreamContext, src: string): Promise<LoadedPdfKitAsset | 
   return asset;
 }
 
-function drawAsset(doc: PdfKitDocument, asset: LoadedPdfKitAsset, x: number, y: number, width: number, height: number, opacity = 1): void {
+function drawAsset(doc: PdfKitDocument, asset: LoadedPdfKitAsset, x: number, y: number, width: number, height: number, opacity = 1, preserveAspectRatio = "xMidYMid meet"): void {
   doc.save();
   doc.opacity(opacity);
   if (asset.kind === "svg" && asset.svgText) {
-    SVGtoPDF(doc, asset.svgText, x, y, { width, height, preserveAspectRatio: "xMidYMid meet" });
+    SVGtoPDF(doc, asset.svgText, x, y, { width, height, preserveAspectRatio });
   } else {
-    doc.image(asset.bytes, x, y, { fit: [width, height], align: "center", valign: "center" });
+    doc.image(asset.bytes, x, y, { width, height });
   }
   doc.restore();
 }
 
 function drawAssetSafely(ctx: StreamContext, asset: LoadedPdfKitAsset, x: number, y: number, width: number, height: number, opacity = 1, label = "image"): void {
+  drawAssetInBox(ctx, asset, x, y, width, height, {}, opacity, label);
+}
+
+function objectFitFromStyle(styles: StyleMap | undefined): ObjectFitMode {
+  const value = styles?.["object-fit"]?.trim().toLowerCase();
+  if (value === "cover") return "cover";
+  if (value === "fill") return "fill";
+  return "contain";
+}
+
+function objectPositionFromStyle(styles: StyleMap | undefined): ObjectPosition {
+  const tokens = (styles?.["object-position"] ?? "center center").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  let x: ObjectPosition["x"] = "center";
+  let y: ObjectPosition["y"] = "center";
+
+  for (const token of tokens) {
+    if (token === "left" || token === "right") x = token;
+    else if (token === "top" || token === "bottom") y = token;
+    else if (token === "center") {
+      x = x ?? "center";
+      y = y ?? "center";
+    }
+  }
+
+  return { x, y };
+}
+
+function positionedStart(containerStart: number, containerSize: number, itemSize: number, align: "left" | "center" | "right" | "top" | "bottom"): number {
+  if (align === "right" || align === "bottom") return containerStart + containerSize - itemSize;
+  if (align === "center") return containerStart + (containerSize - itemSize) / 2;
+  return containerStart;
+}
+
+function cssOpacity(styles: StyleMap | undefined, fallback = 1): number {
+  const raw = styles?.["opacity"];
+  if (!raw) return fallback;
+  const trimmed = raw.trim();
+  const value = Number.parseFloat(trimmed);
+  if (!Number.isFinite(value)) return fallback;
+  return clamp(trimmed.endsWith("%") ? value / 100 : value, 0, 1);
+}
+
+function transformValue(styles: StyleMap | undefined): string {
+  return (styles?.["transform"] ?? styles?.["-webkit-transform"] ?? "").trim();
+}
+
+function transformOriginValue(styles: StyleMap | undefined): string {
+  return (styles?.["transform-origin"] ?? styles?.["-webkit-transform-origin"] ?? "center center").trim();
+}
+
+function splitTransformArgs(args: string): string[] {
+  return args.trim().split(/\s*,\s*|\s+/).filter(Boolean);
+}
+
+function angleDeg(value: string | undefined): number {
+  if (!value) return 0;
+  const raw = value.trim().toLowerCase();
+  const numeric = Number.parseFloat(raw);
+  if (!Number.isFinite(numeric)) return 0;
+  if (raw.endsWith("rad")) return numeric * 180 / Math.PI;
+  if (raw.endsWith("turn")) return numeric * 360;
+  if (raw.endsWith("grad")) return numeric * 0.9;
+  return numeric;
+}
+
+function translateLength(value: string | undefined, base: number): number {
+  if (!value) return 0;
+  return cssLengthPt(value, base) ?? 0;
+}
+
+function transformOriginAxis(token: string | undefined, base: number, axis: "x" | "y"): number | undefined {
+  if (!token) return undefined;
+  const raw = token.trim().toLowerCase();
+  if (axis === "x") {
+    if (raw === "left") return 0;
+    if (raw === "center") return base / 2;
+    if (raw === "right") return base;
+    if (raw === "top" || raw === "bottom") return undefined;
+  } else {
+    if (raw === "top") return 0;
+    if (raw === "center") return base / 2;
+    if (raw === "bottom") return base;
+    if (raw === "left" || raw === "right") return undefined;
+  }
+  return cssLengthPt(raw, base);
+}
+
+function transformOrigin(styles: StyleMap | undefined, width: number, height: number): CssTransformOrigin {
+  const tokens = transformOriginValue(styles).toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return { x: width / 2, y: height / 2 };
+  let x: number | undefined;
+  let y: number | undefined;
+
+  for (const token of tokens) {
+    x ??= transformOriginAxis(token, width, "x");
+    y ??= transformOriginAxis(token, height, "y");
+  }
+
+  if (tokens.length >= 2) {
+    x = transformOriginAxis(tokens[0], width, "x") ?? x;
+    y = transformOriginAxis(tokens[1], height, "y") ?? y;
+  }
+
+  return { x: x ?? width / 2, y: y ?? height / 2 };
+}
+
+function applyCssTransform(doc: PdfKitDocument, styles: StyleMap | undefined, x: number, y: number, width: number, height: number): void {
+  const raw = transformValue(styles);
+  if (!raw || raw.toLowerCase() === "none") return;
+
+  const origin = transformOrigin(styles, width, height);
+  doc.translate(x + origin.x, y + origin.y);
+
+  for (const match of raw.matchAll(/([a-z0-9-]+)\(([^)]*)\)/gi)) {
+    const fn = (match[1] ?? "").toLowerCase();
+    const args = splitTransformArgs(match[2] ?? "");
+    if (fn === "rotate") {
+      doc.rotate(angleDeg(args[0]));
+    } else if (fn === "scale") {
+      const sx = Number.parseFloat(args[0] ?? "1");
+      const sy = Number.parseFloat(args[1] ?? args[0] ?? "1");
+      doc.scale(Number.isFinite(sx) ? sx : 1, Number.isFinite(sy) ? sy : 1);
+    } else if (fn === "scalex") {
+      const sx = Number.parseFloat(args[0] ?? "1");
+      doc.scale(Number.isFinite(sx) ? sx : 1, 1);
+    } else if (fn === "scaley") {
+      const sy = Number.parseFloat(args[0] ?? "1");
+      doc.scale(1, Number.isFinite(sy) ? sy : 1);
+    } else if (fn === "translate") {
+      doc.translate(translateLength(args[0], width), translateLength(args[1], height));
+    } else if (fn === "translatex") {
+      doc.translate(translateLength(args[0], width), 0);
+    } else if (fn === "translatey") {
+      doc.translate(0, translateLength(args[0], height));
+    }
+  }
+
+  doc.translate(-x - origin.x, -y - origin.y);
+}
+
+function drawAssetInBox(
+  ctx: StreamContext,
+  asset: LoadedPdfKitAsset,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  styles: StyleMap | undefined,
+  opacity = 1,
+  label = "image",
+): void {
+  const fit = objectFitFromStyle(styles);
+  const position = objectPositionFromStyle(styles);
+  const natural = imageDimensions(asset);
+  const cssWidth = cssLengthPt(styles?.["width"], width);
+  const cssHeight = cssLengthPt(styles?.["height"], height);
+  let drawWidth = cssWidth ?? width;
+  let drawHeight = cssHeight ?? height;
+
+  if (fit !== "fill" && natural) {
+    const targetRatio = width / Math.max(1, height);
+    const naturalRatio = natural.width / Math.max(1, natural.height);
+    const scale = fit === "cover"
+      ? naturalRatio > targetRatio ? height / natural.height : width / natural.width
+      : naturalRatio > targetRatio ? width / natural.width : height / natural.height;
+    if (cssWidth == null) drawWidth = natural.width * scale;
+    if (cssHeight == null) drawHeight = natural.height * scale;
+    if (cssWidth != null && cssHeight == null) drawHeight = drawWidth / naturalRatio;
+    if (cssHeight != null && cssWidth == null) drawWidth = drawHeight * naturalRatio;
+  }
+
+  drawWidth = Math.max(1, fit === "fill" && cssWidth == null ? width : drawWidth);
+  drawHeight = Math.max(1, fit === "fill" && cssHeight == null ? height : drawHeight);
+  const drawX = positionedStart(x, width, drawWidth, position.x);
+  const drawY = positionedStart(y, height, drawHeight, position.y);
+  const preserveAspectRatio = fit === "fill" ? "none" : `x${position.x === "left" ? "Min" : position.x === "right" ? "Max" : "Mid"}Y${position.y === "top" ? "Min" : position.y === "bottom" ? "Max" : "Mid"} ${fit === "cover" ? "slice" : "meet"}`;
+  const effectiveOpacity = clamp(opacity * cssOpacity(styles), 0, 1);
+
   try {
-    drawAsset(ctx.doc, asset, x, y, width, height, opacity);
+    ctx.doc.save();
+    ctx.doc.rect(x, y, Math.max(1, width), Math.max(1, height)).clip();
+    applyCssTransform(ctx.doc, styles, drawX, drawY, drawWidth, drawHeight);
+    drawAsset(ctx.doc, asset, drawX, drawY, drawWidth, drawHeight, effectiveOpacity, preserveAspectRatio);
+    ctx.doc.restore();
   } catch (error) {
     ctx.warnings.add("image_draw_failed", `Failed to draw ${label}: ${String(error)}`);
   }
@@ -920,7 +1115,7 @@ async function drawImageBlock(ctx: StreamContext, block: Extract<ParsedBlock, { 
       ? "right"
       : "left";
   const x = align === "center" ? ctx.margin + (ctx.tableWidth - width) / 2 : align === "right" ? ctx.margin + ctx.tableWidth - width : ctx.margin;
-  drawAssetSafely(ctx, asset, x, ctx.y, width, height, 1, "image block");
+  drawAssetInBox(ctx, asset, x, ctx.y, width, height, block.style, 1, "image block");
   ctx.y += height + blockMarginBottom(block);
 }
 
@@ -948,18 +1143,50 @@ function sizeForCell(ctx: StreamContext, cell: ParsedCell, row: ParsedRow): numb
   return ctx.baseFontSize;
 }
 
+function styleBoxHeight(styles: StyleMap, base: number): number | undefined {
+  const height = cssLengthPt(styles["height"], base);
+  const minHeight = cssLengthPt(styles["min-height"], base);
+  const values = [height, minHeight].filter((value): value is number => value != null && Number.isFinite(value));
+  return values.length ? Math.max(...values) : undefined;
+}
+
+function cellVerticalAlign(cell: ParsedCell, row: ParsedRow): CellVerticalAlign {
+  const raw = (cell.styles["vertical-align"] ?? row.styles["vertical-align"] ?? "").trim().toLowerCase();
+  if (raw === "middle" || raw === "center") return "middle";
+  if (raw === "bottom") return "bottom";
+  return "top";
+}
+
+function verticalContentY(y: number, contentHeight: number, itemHeight: number, align: CellVerticalAlign): number {
+  if (align === "bottom") return y + Math.max(0, contentHeight - itemHeight);
+  if (align === "middle") return y + Math.max(0, (contentHeight - itemHeight) / 2);
+  return y;
+}
+
+function estimatedCellImageHeight(ctx: StreamContext, cell: ParsedCell, contentWidth: number): number {
+  if (!cell.imageSrc) return 0;
+  const styles = cell.imageStyles ?? {};
+  const explicitHeight = cssLengthPt(styles["height"], ctx.contentBottom - ctx.contentTop);
+  if (explicitHeight != null) return explicitHeight;
+  const explicitWidth = cssLengthPt(styles["width"], contentWidth);
+  if (explicitWidth != null) return Math.min(explicitWidth, (ctx.contentBottom - ctx.contentTop) * 0.5);
+  return Math.min(36, contentWidth);
+}
+
 function textHeight(ctx: StreamContext, text: string, font: string, size: number, width: number): number {
   ctx.doc.font(font).fontSize(size);
   return ctx.doc.heightOfString(text || " ", { width, lineGap: size * 0.18 });
 }
 
 function estimateRowHeight(ctx: StreamContext, row: ParsedRow, capToPage = true): number {
-  if (row.kind === "section") return 24 * ctx.paddingScale + 10;
+  const rowHeight = styleBoxHeight(row.styles, ctx.contentBottom - ctx.contentTop);
+  if (row.kind === "section") return Math.max(rowHeight ?? 0, 24 * ctx.paddingScale + 10);
   let height = row.kind === "header"
     ? Math.max(32, calculateHeaderCellHeight(ctx.columns) * 0.62)
     : row.kind === "price"
       ? 24 + 8 * ctx.paddingScale
       : 22 + 8 * ctx.paddingScale;
+  if (rowHeight != null) height = Math.max(height, rowHeight);
 
   let col = 0;
   for (const cell of row.cells) {
@@ -973,7 +1200,13 @@ function estimateRowHeight(ctx: StreamContext, row: ParsedRow, capToPage = true)
     const size = sizeForCell(ctx, cell, row);
     const padding = cellPadding(ctx, cell);
     const lineGap = lineGapForStyle({ ...row.styles, ...cell.styles }, size, 0.18);
-    height = Math.max(height, inlineTextHeight(ctx, cell.text, cell.inlines, font, size, Math.max(12, width - padding.left - padding.right), lineGap) + padding.top + padding.bottom);
+    const contentWidth = Math.max(12, width - padding.left - padding.right);
+    const textContentHeight = cell.text || cell.inlines.length > 0
+      ? inlineTextHeight(ctx, cell.text, cell.inlines, font, size, contentWidth, lineGap)
+      : 0;
+    const imageContentHeight = estimatedCellImageHeight(ctx, cell, contentWidth);
+    const cssCellHeight = styleBoxHeight(cell.styles, ctx.contentBottom - ctx.contentTop);
+    height = Math.max(height, textContentHeight + padding.top + padding.bottom, imageContentHeight + padding.top + padding.bottom, cssCellHeight ?? 0);
     col += span;
   }
 
@@ -987,10 +1220,24 @@ async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promi
   if (row.kind === "section") {
     const text = row.cells.find((cell) => cell.text)?.text ?? "";
     ctx.doc.rect(ctx.margin, y, ctx.tableWidth, height).fill(COLORS.sectionBg);
-    ctx.doc.font(ctx.boldFontName).fontSize(ctx.sectionFontSize).fillColor(COLORS.sectionText).text(text, ctx.margin + ctx.cellPaddingX, y + ctx.cellPaddingY, {
-      width: ctx.tableWidth - ctx.cellPaddingX * 2,
-      height: height - ctx.cellPaddingY * 2,
-    });
+    const sectionCell = row.cells.find((cell) => cell.text) ?? row.cells[0];
+    const sectionAlign = sectionCell ? cellVerticalAlign(sectionCell, row) : "middle";
+    const sectionWidth = Math.max(12, ctx.tableWidth - ctx.cellPaddingX * 2);
+    const sectionLineGap = lineGapForStyle(row.styles, ctx.sectionFontSize, 0.18);
+    const sectionTextHeight = inlineTextHeight(ctx, text, sectionCell?.inlines ?? [{ text, styles: {} }], ctx.boldFontName, ctx.sectionFontSize, sectionWidth, sectionLineGap);
+    drawInlineText(
+      ctx,
+      text,
+      sectionCell?.inlines ?? [{ text, styles: {} }],
+      ctx.margin + ctx.cellPaddingX,
+      verticalContentY(y + ctx.cellPaddingY, Math.max(1, height - ctx.cellPaddingY * 2), sectionTextHeight, sectionAlign),
+      sectionWidth,
+      ctx.boldFontName,
+      ctx.sectionFontSize,
+      COLORS.sectionText,
+      sectionLineGap,
+      "center",
+    );
     ctx.y = y + height;
     return;
   }
@@ -1023,21 +1270,37 @@ async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promi
 
     const font = fontForCell(ctx, cell, row);
     const size = sizeForCell(ctx, cell, row);
-    if (cell.imageSrc) {
-      const asset = await getAsset(ctx, cell.imageSrc);
-      if (asset) drawAssetSafely(ctx, asset, x + padding.left, y + padding.top, Math.max(1, width - padding.left - padding.right), Math.max(1, height - padding.top - padding.bottom), 1, "cell image");
-    }
-
     const align = cell.styles["text-align"] === "center" || cell.styles["text-align"] === "right"
       ? cell.styles["text-align"] as "center" | "right"
       : row.styles["text-align"] === "center" || row.styles["text-align"] === "right"
         ? row.styles["text-align"] as "center" | "right"
         : "left";
+    const verticalAlign = cellVerticalAlign(cell, row);
+    const contentX = x + padding.left;
+    const contentY = y + padding.top;
+    const contentWidth = Math.max(12, width - padding.left - padding.right);
+    const contentHeight = Math.max(8, height - padding.top - padding.bottom);
+
+    if (cell.imageSrc) {
+      const asset = await getAsset(ctx, cell.imageSrc);
+      if (asset) {
+        const imageStyles: StyleMap = { ...(cell.imageStyles ?? {}) };
+        if (!imageStyles["object-position"]) {
+          const objectX = align === "right" ? "right" : align === "center" ? "center" : "left";
+          const objectY = verticalAlign === "bottom" ? "bottom" : verticalAlign === "middle" ? "center" : "top";
+          imageStyles["object-position"] = `${objectX} ${objectY}`;
+        }
+        drawAssetInBox(ctx, asset, contentX, contentY, contentWidth, contentHeight, imageStyles, 1, "cell image");
+      }
+    }
+
     const textColor = parseCssColor(cell.styles["color"]) ?? parseCssColor(row.styles["color"]) ?? COLORS.text;
     const lineGap = lineGapForStyle({ ...row.styles, ...cell.styles }, size, 0.18);
+    const textBlockHeight = inlineTextHeight(ctx, cell.text, cell.inlines, font, size, contentWidth, lineGap);
+    const textY = verticalContentY(contentY, contentHeight, textBlockHeight, verticalAlign);
     ctx.doc.save();
-    ctx.doc.rect(x + padding.left, y + padding.top, Math.max(12, width - padding.left - padding.right), Math.max(8, height - padding.top - padding.bottom)).clip();
-    drawInlineText(ctx, cell.text, cell.inlines, x + padding.left, y + padding.top, Math.max(12, width - padding.left - padding.right), font, size, textColor, lineGap, align);
+    ctx.doc.rect(contentX, contentY, contentWidth, contentHeight).clip();
+    drawInlineText(ctx, cell.text, cell.inlines, contentX, textY, contentWidth, font, size, textColor, lineGap, align);
     ctx.doc.restore();
 
     x += width;
