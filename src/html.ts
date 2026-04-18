@@ -1,7 +1,7 @@
 import { parseDocument } from "htmlparser2";
 import type { AnyNode, Element } from "domhandler";
 import { DomUtils } from "htmlparser2";
-import { parseCssFontFaces, parseCssRules, resolveElementStyle, type CssRule } from "./css";
+import { parseCssFontFaces, parseCssPageRule, parseCssRules, resolveElementStyle, type CssRule } from "./css";
 import type { ParsedBlock, ParsedCell, ParsedDocument, ParsedFontFace, ParsedInlineSegment, ParsedRow, ParsedTable } from "./types";
 
 function isElement(node: AnyNode | null | undefined): node is Element {
@@ -283,6 +283,7 @@ function normalizeRowspans(rows: ParsedRow[], columnCount: number): ParsedRow[] 
 function parseTable(tableEl: Element, rules: CssRule[]): ParsedTable {
   const thead = findFirst(tableEl, (el) => el.name.toLowerCase() === "thead");
   const tbody = findFirst(tableEl, (el) => el.name.toLowerCase() === "tbody");
+  const theadStyles = thead ? resolveElementStyle(thead, rules) : {};
 
   const headRows = thead
     ? directElementChildren(thead, "tr").map((row) => parseRow(row, "header", rules))
@@ -302,6 +303,7 @@ function parseTable(tableEl: Element, rules: CssRule[]): ParsedTable {
     headRows: normalizeRowspans(headRows, columnCount),
     bodyRows: normalizeRowspans([...bodyRows, ...footRows], columnCount),
     columnCount,
+    repeatHeader: theadStyles["display"]?.trim().toLowerCase() === "table-header-group",
   };
 }
 
@@ -437,6 +439,7 @@ export function parsePrintableHtml(html: string): ParsedDocument {
   const css = styleText(roots);
   const rules = parseCssRules(css);
   const fontFaces: ParsedFontFace[] = parseCssFontFaces(css);
+  const page = parseCssPageRule(css);
 
   const brandEl = findFirst(roots, (el) => hasClass(el, "brand-name"));
   const titleEl = findFirst(roots, (el) => el.name.toLowerCase() === "title");
@@ -459,6 +462,7 @@ export function parsePrintableHtml(html: string): ParsedDocument {
     fontFaces,
     blocks,
   };
+  if (page) parsed.page = page;
   if (primaryTable) parsed.primaryTable = primaryTable;
   if (contacts.qrSrc) parsed.contactQrSrc = contacts.qrSrc;
   return parsed;

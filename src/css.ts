@@ -1,4 +1,5 @@
 import type { Element } from "domhandler";
+import type { ParsedPageRule } from "./types";
 
 export type StyleMap = Record<string, string>;
 
@@ -100,6 +101,38 @@ export function parseCssFontFaces(css: string): CssFontFaceRule[] {
     faces.push(face);
   }
   return faces;
+}
+
+function lengthToMm(value: string | undefined): number | undefined {
+  const px = parseLengthPx(value);
+  return px == null ? undefined : px * 25.4 / 96;
+}
+
+function parsePageSize(value: string | undefined): Pick<ParsedPageRule, "size" | "orientation"> {
+  const out: Pick<ParsedPageRule, "size" | "orientation"> = {};
+  const tokens = (value ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.includes("a4")) out.size = "A4";
+  if (tokens.includes("letter")) out.size = "LETTER";
+  if (tokens.includes("landscape")) out.orientation = "landscape";
+  if (tokens.includes("portrait")) out.orientation = "portrait";
+  return out;
+}
+
+export function parseCssPageRule(css: string): ParsedPageRule | undefined {
+  const cleaned = stripCssComments(css);
+  const match = /@page(?:\s+[^{:]+|\s*)\{([^{}]*)\}/i.exec(cleaned);
+  if (!match?.[1]) return undefined;
+  const declarations = parseStyleDeclarations(match[1]);
+  const size = parsePageSize(declarations["size"]);
+  const margin = lengthToMm(declarations["margin"]?.trim().split(/\s+/)[0]);
+  const marginTop = lengthToMm(declarations["margin-top"]);
+
+  const page: ParsedPageRule = {};
+  if (size.size) page.size = size.size;
+  if (size.orientation) page.orientation = size.orientation;
+  if (marginTop != null) page.marginMm = marginTop;
+  else if (margin != null) page.marginMm = margin;
+  return Object.keys(page).length > 0 ? page : undefined;
 }
 
 function classList(el: Element): string[] {

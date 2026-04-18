@@ -92,6 +92,87 @@ if (fontFace.warnings.length !== 0) {
 }
 console.log({ name: "font-face-css", pages: fontFace.pages, bytes: fontFace.pdf.byteLength, warnings: fontFace.warnings.length });
 
+const pageWrapRepeat = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 landscape; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; }
+    thead { display: table-header-group; }
+    th, td { border: 1px solid #bbb; padding: 6px; overflow-wrap: anywhere; }
+  </style></head><body>
+    <table>
+      <thead><tr><th>ID</th><th>Long token</th></tr></thead>
+      <tbody>${Array.from({ length: 28 }, (_, i) => `<tr><td>${i + 1}</td><td>LONG_UNBROKEN_TOKEN_${"X".repeat(80)}</td></tr>`).join("")}</tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  text: { overflowWrap: "break-word" },
+});
+const pageWrapLoaded = await PDFDocument.load(pageWrapRepeat.pdf);
+if (pageWrapLoaded.getPageCount() !== pageWrapRepeat.pages || pageWrapRepeat.orientation !== "landscape") {
+  throw new Error("page wrap repeat: page count or orientation mismatch");
+}
+console.log({ name: "page-wrap-repeat", pages: pageWrapRepeat.pages, bytes: pageWrapRepeat.pdf.byteLength, warnings: pageWrapRepeat.warnings.length });
+
+const mergedTable = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    table { width: 100%; border-collapse: collapse; }
+    thead { display: table-header-group; }
+    th, td { border: 1px solid #bbb; padding: 9px; overflow-wrap: anywhere; }
+    .group { break-inside: avoid; }
+  </style></head><body>
+    <table>
+      <thead><tr><th rowspan="2">Group</th><th colspan="2">Data</th></tr><tr><th>Name</th><th>Long value</th></tr></thead>
+      <tbody>${Array.from({ length: 12 }, (_, i) => `
+        <tr class="group"><td rowspan="2">Group ${i + 1}</td><td>A</td><td>${"MERGED_LONG_VALUE_".repeat(5)}</td></tr>
+        <tr class="group"><td>B</td><td>${"MERGED_LONG_VALUE_".repeat(5)}</td></tr>
+      `).join("")}</tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  table: { rowspanPagination: "avoid" },
+  text: { overflowWrap: "break-word" },
+});
+const mergedLoaded = await PDFDocument.load(mergedTable.pdf);
+if (mergedLoaded.getPageCount() !== mergedTable.pages) {
+  throw new Error("merged table: reported page count mismatch");
+}
+console.log({ name: "merged-table-pagination", pages: mergedTable.pages, bytes: mergedTable.pdf.byteLength, warnings: mergedTable.warnings.length });
+
+const wideTable = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 landscape; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; }
+    thead { display: table-header-group; }
+    th, td { border: 1px solid #bbb; padding: 6px; overflow-wrap: anywhere; }
+  </style></head><body>
+    <table>
+      <thead>
+        <tr><th rowspan="2">Pinned</th><th colspan="8">Wide metrics</th></tr>
+        <tr>${Array.from({ length: 8 }, (_, i) => `<th>M${i + 1}</th>`).join("")}</tr>
+      </thead>
+      <tbody>${Array.from({ length: 8 }, (_, row) => `
+        <tr><td>Row ${row + 1}</td>${Array.from({ length: 8 }, (_, col) => `<td>${row + 1}-${col + 1}-${"LONGVALUE".repeat(3)}</td>`).join("")}</tr>
+      `).join("")}</tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  table: {
+    horizontalPagination: "always",
+    horizontalPageColumns: 3,
+    repeatColumns: 1,
+    rowspanPagination: "avoid",
+  },
+  text: { overflowWrap: "break-word" },
+});
+const wideLoaded = await PDFDocument.load(wideTable.pdf);
+if (wideLoaded.getPageCount() !== wideTable.pages || wideTable.pages < 2) {
+  throw new Error("wide table: horizontal pagination did not produce multiple pages");
+}
+console.log({ name: "wide-table-pagination", pages: wideTable.pages, bytes: wideTable.pdf.byteLength, warnings: wideTable.warnings.length });
+
 await assertPdf("document-blocks", `<!doctype html><html><body>
   <style>
     .quote { background-color: #f6f8fa; border-color: #94a3b8; }

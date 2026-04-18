@@ -1,6 +1,10 @@
 export type PageOrientation = "portrait" | "landscape";
 export type WatermarkPattern = "auto" | "minimal" | "diagonal" | "triangle" | "corners" | "honeycomb" | "none";
 export type WatermarkLayer = "background" | "foreground" | "both";
+export type TableHeaderRepeat = boolean | "auto";
+export type TableRowspanPagination = "avoid" | "split";
+export type TableHorizontalPagination = "none" | "auto" | "always";
+export type TextOverflowWrap = "normal" | "break-word" | "anywhere";
 
 export interface PdfStylesheetInput {
   href?: string;
@@ -75,6 +79,31 @@ export interface PdfPageOptions {
   marginMm?: number;
 }
 
+export interface PdfTextOptions {
+  overflowWrap?: TextOverflowWrap;
+}
+
+export interface PdfTableOptions {
+  /**
+   * Keep rows connected by rowspan on one page whenever the group fits on a fresh page.
+   * This mirrors spreadsheet/PDF-export behavior for merged vertical cells.
+   */
+  rowspanPagination?: TableRowspanPagination;
+  /**
+   * Split very wide tables into several horizontal page slices.
+   * Repeated headers and rowspans keep working inside every slice.
+   */
+  horizontalPagination?: TableHorizontalPagination;
+  /**
+   * Maximum non-repeated source columns rendered in one horizontal slice.
+   */
+  horizontalPageColumns?: number;
+  /**
+   * Number of left-side source columns repeated in every horizontal slice.
+   */
+  repeatColumns?: number;
+}
+
 export type PdfPageTextAlign = "left" | "center" | "right";
 
 export interface PdfPageTemplateOptions {
@@ -105,7 +134,10 @@ export interface RenderHtmlToPdfOptions {
   resourcePolicy?: PdfResourcePolicy;
   recordId?: string;
   page?: PdfPageOptions;
+  text?: PdfTextOptions;
+  table?: PdfTableOptions;
   font?: PdfFontOptions;
+  tableHeaderRepeat?: TableHeaderRepeat;
   repeatHeaders?: boolean;
   hideHeader?: boolean;
   watermarkText?: string | null;
@@ -137,8 +169,15 @@ export interface ParsedDocument {
   contactItems: string[];
   contactQrSrc?: string;
   fontFaces: ParsedFontFace[];
+  page?: ParsedPageRule;
   blocks: ParsedBlock[];
   primaryTable?: ParsedTable;
+}
+
+export interface ParsedPageRule {
+  size?: "A4" | "LETTER";
+  orientation?: PageOrientation;
+  marginMm?: number;
 }
 
 export interface ParsedFontFace {
@@ -169,6 +208,7 @@ export interface ParsedTable {
   headRows: ParsedRow[];
   bodyRows: ParsedRow[];
   columnCount: number;
+  repeatHeader?: boolean;
 }
 
 export interface ParsedRow {

@@ -15,10 +15,13 @@ import type {
   ParsedDocument,
   ParsedFontFace,
   ParsedInlineSegment,
+  ParsedPageRule,
   ParsedRow,
   ParsedTable,
+  PdfPageOptions,
   RenderHtmlToPdfOptions,
   RenderHtmlToPdfResult,
+  TextOverflowWrap,
 } from "./types";
 import {
   calculateFontScale,
@@ -47,6 +50,7 @@ interface StreamContext {
   parsed: ParsedDocument;
   columns: number;
   orientation: PageOrientation;
+  pageSize: "A4" | "LETTER";
   margin: number;
   contentTop: number;
   contentBottom: number;
@@ -98,6 +102,32 @@ interface TextBoxStyle {
   border: BorderStyle;
 }
 
+interface RowRenderGroup {
+  rows: ParsedRow[];
+  startIndex: number;
+  height: number;
+  hasRowspan: boolean;
+}
+
+interface TableColumnSlice {
+  columns: number[];
+  start: number;
+  end: number;
+  index: number;
+  total: number;
+}
+
+interface LogicalCell {
+  cell: ParsedCell;
+  start: number;
+  end: number;
+}
+
+interface ColumnRange {
+  start: number;
+  end: number;
+}
+
 const COLORS = {
   text: "#22252a",
   border: "#d7dce3",
@@ -118,6 +148,14 @@ function asOpacity(value: number | undefined, fallback: number): number {
 
 function pageLayout(orientation: PageOrientation): "portrait" | "landscape" {
   return orientation === "portrait" ? "portrait" : "landscape";
+}
+
+function effectivePageOptions(options: RenderHtmlToPdfOptions, pageRule: ParsedPageRule | undefined): Required<PdfPageOptions> {
+  return {
+    size: options.page?.size ?? pageRule?.size ?? "A4",
+    orientation: options.page?.orientation ?? pageRule?.orientation ?? "auto",
+    marginMm: options.page?.marginMm ?? pageRule?.marginMm ?? 2.5,
+  };
 }
 
 function computeColumnWidths(columns: number, contentWidth: number): number[] {
@@ -549,7 +587,7 @@ function finishPage(ctx: StreamContext): void {
 
 function addPage(ctx: StreamContext): void {
   finishPage(ctx);
-  ctx.doc.addPage({ size: ctx.options.page?.size ?? "A4", layout: pageLayout(ctx.orientation), margin: 0 });
+  ctx.doc.addPage({ size: ctx.pageSize, layout: pageLayout(ctx.orientation), margin: 0 });
   ctx.y = ctx.contentTop;
   drawWatermark(ctx, "background");
   drawPageChrome(ctx);
@@ -732,10 +770,49 @@ function inlineColor(segment: ParsedInlineSegment, fallbackColor: string): strin
   return parseCssColor(segment.styles["color"]) ?? fallbackColor;
 }
 
+function wrapModeFromStyle(style: StyleMap, fallback: TextOverflowWrap | undefined): TextOverflowWrap {
+  const overflowWrap = (style["overflow-wrap"] ?? style["word-wrap"] ?? "").trim().toLowerCase();
+  const wordBreak = (style["word-break"] ?? "").trim().toLowerCase();
+  if (overflowWrap === "anywhere" || wordBreak === "break-all") return "anywhere";
+  if (overflowWrap === "break-word" || wordBreak === "break-word") return "break-word";
+  return fallback ?? "normal";
+}
+
+function breakLongToken(doc: PdfKitDocument, font: string, size: number, token: string, width: number): string {
+  doc.font(font).fontSize(size);
+  if (doc.widthOfString(token) <= width) return token;
+  let out = "";
+  let current = "";
+  for (const char of token) {
+    const candidate = current + char;
+    if (current && doc.widthOfString(candidate) > width) {
+      out += `${current}\n`;
+      current = char;
+    } else {
+      current = candidate;
+    }
+  }
+  return out + current;
+}
+
+function wrapSegmentText(ctx: StreamContext, segment: ParsedInlineSegment, fallbackFont: string, fallbackSize: number, width: number): string {
+  const mode = wrapModeFromStyle(segment.styles, ctx.options.text?.overflowWrap);
+  if (mode === "normal" || width <= 0) return segment.text;
+  const font = inlineFont(ctx, segment, fallbackFont);
+  const size = inlineSize(segment, fallbackSize);
+  if (mode === "anywhere") return breakLongToken(ctx.doc, font, size, segment.text, width);
+  return segment.text.split(/(\s+)/).map((part) => /\s+/.test(part) ? part : breakLongToken(ctx.doc, font, size, part, width)).join("");
+}
+
+function wrappedInlineSegments(ctx: StreamContext, inlines: ParsedInlineSegment[], fallbackFont: string, fallbackSize: number, width: number): ParsedInlineSegment[] {
+  return inlines.map((segment) => ({ ...segment, text: wrapSegmentText(ctx, segment, fallbackFont, fallbackSize, width) }));
+}
+
 function inlineTextHeight(ctx: StreamContext, text: string, inlines: ParsedInlineSegment[], fallbackFont: string, fallbackSize: number, width: number, lineGap: number): number {
   const maxSize = Math.max(fallbackSize, ...inlines.map((segment) => inlineSize(segment, fallbackSize)));
+  const wrappedText = wrappedInlineSegments(ctx, inlines.length > 0 ? inlines : [{ text, styles: {} }], fallbackFont, fallbackSize, width).map((segment) => segment.text).join("");
   ctx.doc.font(fallbackFont).fontSize(maxSize);
-  return ctx.doc.heightOfString(text || " ", { width, lineGap });
+  return ctx.doc.heightOfString(wrappedText || " ", { width, lineGap });
 }
 
 function drawInlineText(
@@ -751,7 +828,7 @@ function drawInlineText(
   lineGap: number,
   align: "left" | "center" | "right",
 ): void {
-  const segments = inlines.length > 0 ? inlines : [{ text, styles: {} }];
+  const segments = wrappedInlineSegments(ctx, inlines.length > 0 ? inlines : [{ text, styles: {} }], fallbackFont, fallbackSize, width);
   let first = true;
   for (const segment of segments) {
     const decoration = (segment.styles["text-decoration"] ?? "").toLowerCase();
@@ -876,7 +953,7 @@ function textHeight(ctx: StreamContext, text: string, font: string, size: number
   return ctx.doc.heightOfString(text || " ", { width, lineGap: size * 0.18 });
 }
 
-function estimateRowHeight(ctx: StreamContext, row: ParsedRow): number {
+function estimateRowHeight(ctx: StreamContext, row: ParsedRow, capToPage = true): number {
   if (row.kind === "section") return 24 * ctx.paddingScale + 10;
   let height = row.kind === "header"
     ? Math.max(32, calculateHeaderCellHeight(ctx.columns) * 0.62)
@@ -900,7 +977,7 @@ function estimateRowHeight(ctx: StreamContext, row: ParsedRow): number {
     col += span;
   }
 
-  return Math.min(height, ctx.contentBottom - ctx.contentTop - 8);
+  return capToPage ? Math.min(height, ctx.contentBottom - ctx.contentTop - 8) : height;
 }
 
 async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promise<void> {
@@ -970,43 +1047,311 @@ async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promi
   ctx.y = y + height;
 }
 
-async function drawRows(ctx: StreamContext, rows: ParsedRow[], headers: ParsedRow[]): Promise<void> {
-  const repeat = ctx.options.repeatHeaders ?? false;
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i]!;
-    const height = estimateRowHeight(ctx, row);
-    if (ctx.y + height > ctx.contentBottom) {
-      addPage(ctx);
-      if (repeat) {
-        for (const header of headers) await drawRow(ctx, header, -1);
+function rowHasBreakInsideAvoid(row: ParsedRow): boolean {
+  const value = (row.styles["break-inside"] ?? row.styles["page-break-inside"] ?? "").trim().toLowerCase();
+  return value === "avoid" || value === "avoid-page";
+}
+
+function groupRowsByRowspan(ctx: StreamContext, rows: ParsedRow[]): RowRenderGroup[] {
+  const groups: RowRenderGroup[] = [];
+  for (let i = 0; i < rows.length;) {
+    let end = rows[i]?.kind === "section" && i + 1 < rows.length ? i + 1 : i;
+    let hasRowspan = false;
+
+    for (let scan = i; scan <= end && scan < rows.length; scan++) {
+      const row = rows[scan]!;
+      for (const cell of row.cells) {
+        if (!cell.isSpanPlaceholder && cell.rowspan > 1) {
+          hasRowspan = true;
+          end = Math.max(end, scan + cell.rowspan - 1);
+        }
       }
     }
-    await drawRow(ctx, row, i);
+
+    const groupRows = rows.slice(i, Math.min(rows.length, end + 1));
+    const height = groupRows.reduce((sum, row) => sum + estimateRowHeight(ctx, row, false), 0);
+    groups.push({ rows: groupRows, startIndex: i, height, hasRowspan });
+    i = end + 1;
+  }
+  return groups;
+}
+
+function rowsHeight(ctx: StreamContext, rows: ParsedRow[], capToPage = true): number {
+  return rows.reduce((sum, row) => sum + estimateRowHeight(ctx, row, capToPage), 0);
+}
+
+async function drawRepeatedHeaders(ctx: StreamContext, headers: ParsedRow[], repeat: boolean): Promise<void> {
+  if (!repeat) return;
+  for (const header of headers) await drawRow(ctx, header, -1);
+}
+
+function freshPageBodyHeight(ctx: StreamContext, headers: ParsedRow[], repeat: boolean): number {
+  return Math.max(0, ctx.contentBottom - ctx.contentTop - (repeat ? rowsHeight(ctx, headers) : 0));
+}
+
+async function drawRowSequentially(ctx: StreamContext, row: ParsedRow, index: number, headers: ParsedRow[], repeat: boolean): Promise<void> {
+  const rawHeight = estimateRowHeight(ctx, row, false);
+  const pageHeight = Math.max(1, ctx.contentBottom - ctx.contentTop);
+  if (rawHeight > pageHeight) {
+    ctx.warnings.add("table_row_too_tall", `Table row ${index + 1} is taller than a page and may be clipped. Reduce content, font size, or padding.`);
+  }
+  const height = estimateRowHeight(ctx, row);
+  if (ctx.y + height > ctx.contentBottom) {
+    addPage(ctx);
+    await drawRepeatedHeaders(ctx, headers, repeat);
+  }
+  await drawRow(ctx, row, index);
+}
+
+async function drawRowGroups(ctx: StreamContext, rows: ParsedRow[], headers: ParsedRow[], repeat: boolean): Promise<void> {
+  const groups = groupRowsByRowspan(ctx, rows);
+  const keepRowspans = ctx.options.table?.rowspanPagination !== "split";
+
+  for (const group of groups) {
+    const avoidGroupBreak = keepRowspans && group.hasRowspan || group.rows.some(rowHasBreakInsideAvoid);
+    const freshBody = freshPageBodyHeight(ctx, headers, repeat);
+
+    if (avoidGroupBreak && group.height <= freshBody && ctx.y + group.height > ctx.contentBottom) {
+      addPage(ctx);
+      await drawRepeatedHeaders(ctx, headers, repeat);
+    } else if (avoidGroupBreak && group.height > freshBody) {
+      ctx.warnings.add("table_rowspan_group_too_tall", `Rows ${group.startIndex + 1}-${group.startIndex + group.rows.length} are connected by rowspan/break-inside and do not fit on a fresh page; rendering sequentially.`);
+    }
+
+    for (let offset = 0; offset < group.rows.length; offset++) {
+      await drawRowSequentially(ctx, group.rows[offset]!, group.startIndex + offset, headers, repeat);
+    }
   }
 }
 
-async function drawTableBlock(ctx: StreamContext, block: Extract<ParsedBlock, { type: "table" }>): Promise<void> {
-  const table = block.table;
+function shouldRepeatTableHeaders(ctx: StreamContext, table: ParsedTable): boolean {
+  if (ctx.options.tableHeaderRepeat === "auto") return table.headRows.length > 0;
+  if (typeof ctx.options.tableHeaderRepeat === "boolean") return ctx.options.tableHeaderRepeat;
+  if (ctx.options.repeatHeaders != null) return ctx.options.repeatHeaders;
+  return table.repeatHeader ?? false;
+}
+
+function normalizedHorizontalPageColumns(ctx: StreamContext): number {
+  const configured = ctx.options.table?.horizontalPageColumns;
+  if (configured != null && Number.isFinite(configured)) return Math.max(1, Math.floor(configured));
+  return ctx.orientation === "landscape" ? 8 : 6;
+}
+
+function normalizedRepeatColumns(ctx: StreamContext, table: ParsedTable): number {
+  const configured = ctx.options.table?.repeatColumns ?? 0;
+  if (!Number.isFinite(configured) || table.columnCount <= 1) return 0;
+  return clamp(Math.floor(configured), 0, table.columnCount - 1);
+}
+
+function protectedColspanRanges(table: ParsedTable): ColumnRange[] {
+  const ranges: ColumnRange[] = [];
+  for (const row of table.bodyRows) {
+    if (row.kind === "section") continue;
+    for (const item of logicalCellsForRow(row)) {
+      const span = item.end - item.start;
+      if (span <= 1 || span >= table.columnCount || item.cell.isSpanPlaceholder) continue;
+      ranges.push({ start: item.start, end: item.end });
+    }
+  }
+  return ranges;
+}
+
+function adjustedSliceEnd(start: number, initialEnd: number, table: ParsedTable, protectedRanges: ColumnRange[]): number {
+  let end = initialEnd;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const range of protectedRanges) {
+      if (range.start < end && range.end > end && range.end > start) {
+        end = Math.min(table.columnCount, range.end);
+        changed = true;
+      }
+    }
+  }
+  return Math.max(start + 1, Math.min(table.columnCount, end));
+}
+
+function horizontalColumnSlices(ctx: StreamContext, table: ParsedTable): TableColumnSlice[] {
+  const mode = ctx.options.table?.horizontalPagination ?? "none";
+  if (mode === "none" || table.columnCount <= 1) {
+    return [{ columns: Array.from({ length: table.columnCount }, (_, i) => i), start: 0, end: table.columnCount, index: 0, total: 1 }];
+  }
+
+  const repeatColumns = normalizedRepeatColumns(ctx, table);
+  const pageColumns = normalizedHorizontalPageColumns(ctx);
+  const variableColumns = Math.max(1, table.columnCount - repeatColumns);
+  if (variableColumns <= pageColumns) {
+    return [{ columns: Array.from({ length: table.columnCount }, (_, i) => i), start: 0, end: table.columnCount, index: 0, total: 1 }];
+  }
+
+  const repeated = Array.from({ length: repeatColumns }, (_, i) => i);
+  const protectedRanges = protectedColspanRanges(table);
+  const slices: TableColumnSlice[] = [];
+  for (let start = repeatColumns; start < table.columnCount;) {
+    const end = adjustedSliceEnd(start, Math.min(table.columnCount, start + pageColumns), table, protectedRanges);
+    slices.push({
+      columns: [...repeated, ...Array.from({ length: end - start }, (_, i) => start + i)],
+      start,
+      end,
+      index: slices.length,
+      total: 0,
+    });
+    start = end;
+  }
+  return slices.map((slice) => ({ ...slice, total: slices.length }));
+}
+
+function logicalCellsForRow(row: ParsedRow): LogicalCell[] {
+  const cells: LogicalCell[] = [];
+  let col = 0;
+  for (const cell of row.cells) {
+    const span = Math.max(1, cell.colspan);
+    cells.push({ cell, start: col, end: col + span });
+    col += span;
+  }
+  return cells;
+}
+
+function logicalCellAt(cells: LogicalCell[], column: number): LogicalCell | undefined {
+  return cells.find((item) => column >= item.start && column < item.end);
+}
+
+function emptySliceCell(isParam: boolean, colspan: number): ParsedCell {
+  return {
+    text: "",
+    inlines: [],
+    className: "",
+    style: "",
+    styles: {},
+    colspan,
+    rowspan: 1,
+    isHeader: false,
+    isParam,
+    isPrice: false,
+    isDiff: false,
+    isSection: false,
+  };
+}
+
+function cloneCellForSlice(cell: ParsedCell, colspan: number): ParsedCell {
+  return {
+    ...cell,
+    colspan,
+    rowspan: cell.rowspan,
+    inlines: cell.inlines.map((segment) => ({ ...segment, styles: { ...segment.styles } })),
+    styles: { ...cell.styles },
+  };
+}
+
+function sliceRowByColumns(row: ParsedRow, columns: number[]): { row: ParsedRow; splitBodyColspan: boolean } {
+  const logical = logicalCellsForRow(row);
+  const cells: ParsedCell[] = [];
+  let splitBodyColspan = false;
+  let current: LogicalCell | undefined;
+  let currentSpan = 0;
+  let currentIsSynthetic = false;
+
+  const flush = () => {
+    if (currentSpan <= 0) return;
+    if (!current) {
+      cells.push(emptySliceCell(cells.length === 0, currentSpan));
+    } else {
+      if (
+        currentSpan < Math.max(1, current.cell.colspan)
+        && !current.cell.isSpanPlaceholder
+        && !current.cell.isHeader
+        && !current.cell.isSection
+        && row.kind !== "section"
+      ) {
+        splitBodyColspan = true;
+      }
+      cells.push(cloneCellForSlice(current.cell, currentSpan));
+    }
+    current = undefined;
+    currentSpan = 0;
+    currentIsSynthetic = false;
+  };
+
+  for (const column of columns) {
+    const hit = logicalCellAt(logical, column);
+    const isSynthetic = !hit;
+    if (currentSpan > 0 && hit?.cell === current?.cell && isSynthetic === currentIsSynthetic) {
+      currentSpan += 1;
+      continue;
+    }
+    flush();
+    current = hit;
+    currentSpan = 1;
+    currentIsSynthetic = isSynthetic;
+  }
+  flush();
+
+  return { row: { ...row, cells }, splitBodyColspan };
+}
+
+function sliceTableByColumns(table: ParsedTable, columns: number[]): { table: ParsedTable; splitBodyColspan: boolean } {
+  let splitBodyColspan = false;
+  const headRows = table.headRows.map((row) => sliceRowByColumns(row, columns).row);
+  const bodyRows = table.bodyRows.map((row) => {
+    const sliced = sliceRowByColumns(row, columns);
+    if (sliced.splitBodyColspan) splitBodyColspan = true;
+    return sliced.row;
+  });
+  return {
+    table: {
+      ...table,
+      headRows,
+      bodyRows,
+      columnCount: columns.length,
+    },
+    splitBodyColspan,
+  };
+}
+
+async function drawSingleTableBlock(ctx: StreamContext, table: ParsedTable, style: StyleMap, addTrailingGap = true): Promise<void> {
   const previousWidths = ctx.columnWidths;
   const previousColumns = ctx.columns;
   const previousTableWidth = ctx.tableWidth;
   const previousTableStyle = ctx.currentTableStyle;
-  const width = cssLengthPt(block.style["width"], previousTableWidth) ?? previousTableWidth;
+  const width = cssLengthPt(style["width"], previousTableWidth) ?? previousTableWidth;
   ctx.columns = table.columnCount;
   ctx.tableWidth = clamp(width, Math.min(previousTableWidth, 120), previousTableWidth);
-  ctx.currentTableStyle = tableStyle(block.style);
+  ctx.currentTableStyle = tableStyle(style);
   ctx.columnWidths = computeColumnWidths(table.columnCount, ctx.tableWidth);
+  const repeat = shouldRepeatTableHeaders(ctx, table);
+  const groups = groupRowsByRowspan(ctx, table.bodyRows);
+  const firstGroup = groups[0];
+  const headerHeight = rowsHeight(ctx, table.headRows);
+  if (firstGroup && firstGroup.height <= freshPageBodyHeight(ctx, table.headRows, repeat) && ctx.y + headerHeight + firstGroup.height > ctx.contentBottom) {
+    addPage(ctx);
+  }
   for (const row of table.headRows) {
     const height = estimateRowHeight(ctx, row);
     if (ctx.y + height > ctx.contentBottom) addPage(ctx);
     await drawRow(ctx, row, -1);
   }
-  await drawRows(ctx, table.bodyRows, table.headRows);
+  await drawRowGroups(ctx, table.bodyRows, table.headRows, repeat);
   ctx.columns = previousColumns;
   ctx.columnWidths = previousWidths;
   ctx.tableWidth = previousTableWidth;
   ctx.currentTableStyle = previousTableStyle;
-  ctx.y += 8;
+  if (addTrailingGap) ctx.y += 8;
+}
+
+async function drawTableBlock(ctx: StreamContext, block: Extract<ParsedBlock, { type: "table" }>): Promise<void> {
+  const slices = horizontalColumnSlices(ctx, block.table);
+  let splitBodyColspan = false;
+
+  for (const slice of slices) {
+    if (slice.index > 0) addPage(ctx);
+    const sliced = sliceTableByColumns(block.table, slice.columns);
+    if (sliced.splitBodyColspan) splitBodyColspan = true;
+    await drawSingleTableBlock(ctx, sliced.table, block.style, slice.index === slices.length - 1);
+  }
+
+  if (splitBodyColspan) {
+    ctx.warnings.add("table_colspan_horizontal_split", "A body cell with colspan crossed a horizontal table slice boundary; its visible portion was repeated/clipped per slice.");
+  }
 }
 
 async function drawBlock(ctx: StreamContext, block: ParsedBlock): Promise<void> {
@@ -1025,12 +1370,13 @@ async function drawBlock(ctx: StreamContext, block: ParsedBlock): Promise<void> 
 
 async function createStreamContext(options: RenderHtmlToPdfOptions, parsed: ParsedDocument, warnings: WarningSink): Promise<{ ctx: StreamContext; done: Promise<Buffer> }> {
   const columns = maxDocumentColumns(parsed);
-  const orientation = options.page?.orientation && options.page.orientation !== "auto"
-    ? options.page.orientation
+  const pageOptions = effectivePageOptions(options, parsed.page);
+  const orientation = pageOptions.orientation !== "auto"
+    ? pageOptions.orientation
     : determineOrientation(columns);
-  const margin = mm(options.page?.marginMm ?? 2.5);
+  const margin = mm(pageOptions.marginMm);
   const doc = new PDFDocument({
-    size: options.page?.size ?? "A4",
+    size: pageOptions.size,
     layout: pageLayout(orientation),
     margin: 0,
     autoFirstPage: true,
@@ -1067,6 +1413,7 @@ async function createStreamContext(options: RenderHtmlToPdfOptions, parsed: Pars
     parsed,
     columns,
     orientation,
+    pageSize: pageOptions.size,
     margin,
     contentTop: margin + headerReserve,
     contentBottom: pageHeight - margin - footerReserve,

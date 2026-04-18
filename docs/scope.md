@@ -17,10 +17,11 @@
 - portrait, landscape, or automatic orientation
 - repeated table headers
 - large tables with many columns
+- horizontal wide-table pagination with repeated left columns
 - cell background colors for highlights
 - section rows
 - text wrapping
-- row-level pagination
+- row-level pagination with rowspan group avoidance
 - PNG/JPEG images
 - text and image watermarks
 - repeated page header/footer text
@@ -58,7 +59,8 @@ CSS support is intentionally pragmatic. The renderer recognizes common class nam
 - table `border`
 - table/cell `padding`
 - table `border-collapse: collapse`
-- `colspan` and basic `rowspan` grid normalization
+- `colspan`, `rowspan`, and merged-cell grid normalization
+- body `colspan`-aware horizontal table breaks
 - row-level `background-color`, `color`, `font-size`, and `text-align`
 - block `margin`, `padding`, and `border`
 - `line-height`
