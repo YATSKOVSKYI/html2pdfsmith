@@ -32,7 +32,10 @@
 - repeated page header/footer text
 - streaming page numbers with `{page}`
 - custom fonts for Latin, Cyrillic, and CJK text
+- CSS `@font-face` for custom fonts loaded from external stylesheets
 - multiple Google Fonts via `font.googleFonts` and CSS `font-family`
+- external linked stylesheets (`<link rel="stylesheet">`)
+- CSS `@page` rules for page size and margins
 - optional `qpdf` owner-password protection
 
 ## Current HTML Subset
@@ -46,10 +49,11 @@
 - `pre`, `code`
 - `strong`, `b`, `em`, `i`, `u`, `s`, `del`, `span`, `a`
 - `ul`, `ol`, `li`
-- `table`, `thead`, `tbody`, `tfoot`, `tr`, `th`, `td`
+- `table`, `thead`, `tbody`, `tfoot`, `colgroup`, `col`, `tr`, `th`, `td`
 - `br`
 - `img`
 - `hr`
+- `link rel="stylesheet"`, `style`
 - text nodes
 
 ## Current CSS Subset
@@ -72,7 +76,8 @@ CSS support is intentionally pragmatic. The renderer recognizes common class nam
 - row/cell `height`, `min-height`, and `vertical-align`
 - `white-space` and `text-overflow`
 - cell image `width`, `height`, `object-fit`, and `object-position`
-- image `opacity`, `transform`, `transform-origin`, and `-webkit-transform` aliases
+- image `opacity`, `transform`, `transform-origin` for `rotate`, `scale`, `translate`
+- `-webkit-transform` and `-webkit-transform-origin` aliases for Apple/Safari-authored templates (same cross-platform PDF engine on Windows, Linux, macOS)
 - `background-image`, `background-size`, `background-position`, and `background-repeat`
 - `border-radius`
 - simplified `box-shadow`
@@ -81,7 +86,7 @@ CSS support is intentionally pragmatic. The renderer recognizes common class nam
 - `line-height`
 - `text-decoration`
 - `font-size`
-- `font-family` for registered/default fonts and configured Google Fonts
+- `font-family` for registered/default fonts, bundled fonts, and configured Google Fonts
 - `font-weight`
 - `font-style: italic`
 - `color`
@@ -93,5 +98,11 @@ CSS support is intentionally pragmatic. The renderer recognizes common class nam
 - `display: none`
 - `visibility: hidden`
 - `page-break-before`, `page-break-after`, `break-before`, `break-after`
+- CSS `@page { size: A4 landscape; margin: 8mm }`
+- CSS `@font-face { font-family: ...; src: url(...) }` for custom fonts
+- `overflow-wrap`, `word-break`
+- `white-space: nowrap`, `pre-line`, `pre-wrap`
+- `text-overflow: ellipsis` with `white-space: nowrap`
+- `thead { display: table-header-group }` for repeated headers
 
 Full CSS cascade, Flexbox, Grid, JavaScript execution, and arbitrary website rendering are outside the first production target. `{total}` page counts are also intentionally not resolved in streaming mode because that requires buffering or a second pass.

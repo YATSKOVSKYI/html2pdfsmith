@@ -1,6 +1,6 @@
 {
   "name": "@html2pdfsmith/fonts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Optional bundled fonts for Html2PdfSmith offline PDF rendering.",
   "type": "module",
   "main": "./src/index.ts",

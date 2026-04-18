@@ -8,6 +8,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/html2pdfsmith"><img src="https://img.shields.io/npm/v/html2pdfsmith?style=flat-square&color=cb3837&logo=npm&logoColor=white" alt="npm"/></a>
   <a href="#quickstart"><img src="https://img.shields.io/badge/Bun-%3E%3D1.2.0-f472b6?style=flat-square&logo=bun&logoColor=white" alt="Bun >= 1.2.0"/></a>
   <a href="#api"><img src="https://img.shields.io/badge/TypeScript-first-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript first"/></a>
   <a href="#performance"><img src="https://img.shields.io/badge/incremental_RSS-~46_MB-22c55e?style=flat-square" alt="~46 MB incremental RSS"/></a>
@@ -59,6 +60,8 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 ## Quickstart
 
 ```bash
+npm install html2pdfsmith
+# or
 bun add html2pdfsmith
 ```
 
@@ -148,7 +151,7 @@ interface RenderHtmlToPdfResult {
 | `html` | `string` | HTML document string to render |
 | `baseUrl` | `string` | Base URL or directory for relative assets such as CSS, images, SVGs, and fonts |
 | `stylesheets` | `(string \| { href, content })[]` | Extra CSS files, URLs, or inline stylesheet content |
-| `resourcePolicy` | `object` | Resource loading guardrails: HTTP/file/data access, timeout, max image/CSS bytes |
+| `resourcePolicy` | `object` | Resource loading guardrails: HTTP/file/data access, timeout, max image/CSS/font bytes |
 | `repeatHeaders` | `boolean` | Repeat table headers on page breaks |
 | `tableHeaderRepeat` | `boolean \| "auto"` | Repeat table headers explicitly, or automatically for tables with headers |
 | `table.rowspanPagination` | `"avoid" \| "split"` | Keep rowspan-connected rows together when they fit on a fresh page |
@@ -169,6 +172,7 @@ interface RenderHtmlToPdfResult {
 | `watermarkLayer` | `"background" \| "foreground" \| "both"` | Draw watermark behind content, above content, or both |
 | `patternType` | `string` | Watermark pattern hint |
 | `userLogoUrl` | `string \| null` | Logo image for the document header |
+| `logoScale` | `number` | Logo image size scale |
 | `font.googleFont` | `string` | Google Fonts family name, cached to disk |
 | `font.googleFonts` | `string[]` | Additional Google Fonts selectable with CSS `font-family` |
 | `font.bundled` | `PdfBundledFontFace` | Default offline font from an optional bundled-font package |
@@ -257,8 +261,9 @@ Html2PdfSmith supports a document-oriented HTML subset:
 - `p`, `address`, `blockquote`, `pre`, `code`
 - `strong`, `b`, `em`, `i`, `u`, `s`, `del`, `span`, `a`
 - `ul`, `ol`, `li`
-- `table`, `thead`, `tbody`, `tfoot`, `tr`, `th`, `td`
+- `table`, `thead`, `tbody`, `tfoot`, `colgroup`, `col`, `tr`, `th`, `td`
 - `img`, `hr`, `br`
+- `link rel="stylesheet"`, `style`
 - text nodes
 
 Unsupported elements are traversed when possible. Unsupported CSS is ignored rather than failing the render.
@@ -268,8 +273,10 @@ Unsupported elements are traversed when possible. Unsupported CSS is ignored rat
 The CSS support is intentionally pragmatic:
 
 - selector support: tag, class, id, combined simple selectors, and descendant selectors such as `table td`
+- `font-family` for registered, bundled, and Google Fonts
 - `font-size`
 - `font-weight`
+- `font-style: italic`
 - `color`
 - `background-color`
 - `background-image: url(...)`
@@ -304,7 +311,8 @@ The CSS support is intentionally pragmatic:
 - `display: none`
 - `visibility: hidden`
 - `page-break-before`, `page-break-after`, `break-before`, `break-after`
-- `@page { size: A4 landscape; margin: 8mm }`
+- CSS `@page { size: A4 landscape; margin: 8mm }`
+- CSS `@font-face { font-family: ...; src: url(...) }` for custom fonts loaded from external stylesheets
 - `overflow-wrap: break-word`, `overflow-wrap: anywhere`, `word-break: break-word`, `word-break: break-all`
 - `white-space: nowrap`, `white-space: pre-line`, `white-space: pre-wrap`
 - `text-overflow: ellipsis` with `white-space: nowrap`
@@ -479,6 +487,55 @@ await renderHtmlToPdfDetailed({
 ```
 
 With this mode Html2PdfSmith renders the table as multiple column slices. The first `repeatColumns` source columns are pinned on every slice, `thead` is repeated on every vertical page, rowspans keep their pagination behavior inside each slice, and body colspans push the horizontal break forward when they can fit in the current slice. If a body `colspan` is still too wide and crosses a horizontal slice boundary, the renderer clips it to the visible columns and emits a warning so the caller can decide whether the source table should be adjusted.
+
+## Additional Exports
+
+Besides the main `renderHtmlToPdf` and `renderHtmlToPdfDetailed` functions, the library exports several utilities:
+
+```ts
+import {
+  // Legacy compat wrappers (accept htmlContent instead of html)
+  convertHtmlToPdf,
+  convertHtmlToPdfDetailed,
+
+  // HTML parser — returns the structured ParsedDocument
+  parsePrintableHtml,
+
+  // Google Fonts utilities
+  resolveGoogleFont,
+  isGoogleFontCached,
+  getGoogleFontCacheDir,
+
+  // Font resolution
+  resolveFontPaths,
+
+  // Layout helpers
+  calculateFontScale,
+  calculateHeaderCellHeight,
+  calculatePaddingScale,
+  determineOrientation,
+} from "html2pdfsmith";
+```
+
+All TypeScript types are also exported for consumers:
+
+```ts
+import type {
+  RenderHtmlToPdfOptions,
+  RenderHtmlToPdfResult,
+  RenderWarning,
+  PdfResourcePolicy,
+  PdfFontOptions,
+  PdfPageOptions,
+  PdfTextOptions,
+  PdfTableOptions,
+  PdfBundledFontFace,
+  ParsedDocument,
+  ParsedTable,
+  ParsedRow,
+  ParsedCell,
+} from "html2pdfsmith";
+```
 
 ## Fonts
 
