@@ -1,0 +1,88 @@
+@font-face {
+  font-family: "SmithOpen";
+  src: url("../../packages/fonts/fonts/open-sans/OpenSans-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "SmithOpen";
+  src: url("../../packages/fonts/fonts/open-sans/OpenSans-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "SmithOpen";
+  src: url("../../packages/fonts/fonts/open-sans/OpenSans-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: "SmithOpen";
+  src: url("../../packages/fonts/fonts/open-sans/OpenSans-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: "SmithDisplay";
+  src: url("../../packages/fonts/fonts/anton/Anton-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
+
+body {
+  font-family: "SmithOpen";
+  color: #202833;
+}
+
+h1 {
+  font-family: "SmithDisplay";
+  font-size: 30px;
+  font-weight: 400;
+  color: #16213e;
+  text-align: center;
+  margin: 0 0 12px;
+}
+
+.lead {
+  text-align: center;
+  color: #637083;
+  font-size: 11px;
+  margin: 0 0 16px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 2px solid #213547;
+}
+
+th {
+  padding: 9px 8px;
+  border: 1px solid #9aa8b5;
+  background-color: #eaf0f6;
+  font-weight: 700;
+  text-align: center;
+}
+
+td {
+  padding: 8px;
+  border: 1px solid #c8d2dc;
+  font-size: 10px;
+}
+
+.right {
+  text-align: right;
+}
+
+.center {
+  text-align: center;
+}
+
+.blue {
+  color: #2f62d9;
+  font-weight: 700;
+}

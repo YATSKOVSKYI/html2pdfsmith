@@ -6,13 +6,14 @@ import { discoverFontPaths, loadImage, resolveFontPaths } from "./assets";
 import { parseBorderStyle, parseBoxSpacing, parseCssColor, parseLengthPx, type BoxSpacing, type BorderStyle, type StyleMap } from "./css";
 import { resolveGoogleFont } from "./google-fonts";
 import { parsePrintableHtml } from "./html";
-import { prepareHtmlForRender } from "./resources";
+import { loadResource, prepareHtmlForRender } from "./resources";
 import type {
   PageOrientation,
   PdfBundledFontFace,
   ParsedBlock,
   ParsedCell,
   ParsedDocument,
+  ParsedFontFace,
   ParsedInlineSegment,
   ParsedRow,
   ParsedTable,
@@ -292,7 +293,64 @@ function registerFontPair(doc: PdfKitDocument, family: string, paths: { regularP
   }
 }
 
-async function registerFonts(doc: PdfKitDocument, options: RenderHtmlToPdfOptions, warnings: WarningSink): Promise<RegisteredFontPair & { families: Map<string, RegisteredFontPair> }> {
+function fontFaceSlot(face: ParsedFontFace): keyof RegisteredFontPair {
+  const weight = (face.fontWeight ?? "400").toLowerCase();
+  const style = (face.fontStyle ?? "normal").toLowerCase();
+  const bold = weight === "bold" || Number.parseFloat(weight) >= 600;
+  const italic = style === "italic" || style === "oblique";
+  if (bold && italic) return "boldItalic";
+  if (italic) return "italic";
+  return bold ? "bold" : "regular";
+}
+
+async function registerCssFontFace(doc: PdfKitDocument, face: ParsedFontFace, index: number, options: RenderHtmlToPdfOptions, warnings: WarningSink): Promise<{ family: string; slot: keyof RegisteredFontPair; name: string } | null> {
+  const slot = fontFaceSlot(face);
+  const slug = normalizeFontFamily(face.family)?.replace(/[^a-z0-9_-]+/g, "-") ?? `css-font-${index}`;
+  const name = `css-${slug}-${slot}-${index}`;
+
+  for (const src of face.srcs) {
+    const loaded = await loadResource(src, "font", warnings, options);
+    if (!loaded) continue;
+    try {
+      doc.registerFont(name, Buffer.from(loaded.bytes));
+      return { family: face.family, slot, name };
+    } catch (error) {
+      warnings.add("font_face_register_failed", `Could not register @font-face "${face.family}" from ${loaded.display}: ${String(error)}`);
+    }
+  }
+
+  warnings.add("font_face_unavailable", `No usable src was found for @font-face "${face.family}".`);
+  return null;
+}
+
+async function registerCssFontFaces(doc: PdfKitDocument, parsed: ParsedDocument, options: RenderHtmlToPdfOptions, warnings: WarningSink): Promise<Map<string, RegisteredFontPair>> {
+  const partials = new Map<string, Partial<RegisteredFontPair>>();
+
+  for (let i = 0; i < parsed.fontFaces.length; i++) {
+    const registered = await registerCssFontFace(doc, parsed.fontFaces[i]!, i, options, warnings);
+    const normalized = normalizeFontFamily(registered?.family);
+    if (!registered || !normalized) continue;
+    const partial = partials.get(normalized) ?? {};
+    partial[registered.slot] = registered.name;
+    partials.set(normalized, partial);
+  }
+
+  const families = new Map<string, RegisteredFontPair>();
+  for (const [family, partial] of partials) {
+    const fallback = partial.regular ?? partial.bold ?? partial.italic ?? partial.boldItalic;
+    if (!fallback) continue;
+    families.set(family, {
+      regular: partial.regular ?? fallback,
+      bold: partial.bold ?? partial.regular ?? fallback,
+      italic: partial.italic ?? partial.regular ?? fallback,
+      boldItalic: partial.boldItalic ?? partial.bold ?? partial.italic ?? partial.regular ?? fallback,
+    });
+  }
+
+  return families;
+}
+
+async function registerFonts(doc: PdfKitDocument, parsed: ParsedDocument, options: RenderHtmlToPdfOptions, warnings: WarningSink): Promise<RegisteredFontPair & { families: Map<string, RegisteredFontPair> }> {
   const resolved = await resolveFontPaths(options.font, warnings, options.resourcePolicy);
   const regularPath = resolved.regularPath;
   const boldPath = resolved.boldPath ?? regularPath;
@@ -312,6 +370,9 @@ async function registerFonts(doc: PdfKitDocument, options: RenderHtmlToPdfOption
     if (pair && normalized) families.set(normalized, pair);
   }
 
+  const cssFamilies = await registerCssFontFaces(doc, parsed, options, warnings);
+  for (const [family, pair] of cssFamilies) families.set(family, pair);
+
   if (regularPath && existsSync(regularPath)) {
     try {
       doc.registerFont("regular", regularPath);
@@ -327,7 +388,9 @@ async function registerFonts(doc: PdfKitDocument, options: RenderHtmlToPdfOption
     }
   }
 
-  warnings.add("font_fallback", "Falling back to Helvetica; pass explicit fonts for non-Latin text. This keeps the default memory footprint low.");
+  if (families.size === 0) {
+    warnings.add("font_fallback", "Falling back to Helvetica; pass explicit fonts for non-Latin text. This keeps the default memory footprint low.");
+  }
   return { regular: "Helvetica", bold: "Helvetica-Bold", italic: "Helvetica-Oblique", boldItalic: "Helvetica-BoldOblique", families };
 }
 
@@ -984,7 +1047,7 @@ async function createStreamContext(options: RenderHtmlToPdfOptions, parsed: Pars
     // eslint-disable-next-line @typescript-eslint/no-use-before-define
     ctxRef.pages += 1;
   });
-  const fonts = await registerFonts(doc, options, warnings);
+  const fonts = await registerFonts(doc, parsed, options, warnings);
   const pageWidth = doc.page.width;
   const pageHeight = doc.page.height;
   const contentWidth = pageWidth - margin * 2;

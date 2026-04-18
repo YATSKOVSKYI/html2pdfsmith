@@ -194,6 +194,7 @@ const result = await renderHtmlToPdfDetailed({
     timeoutMs: 8000,
     maxImageBytes: 5_000_000,
     maxStylesheetBytes: 500_000,
+    maxFontBytes: 10_000_000,
   },
 });
 ```
@@ -209,6 +210,26 @@ await renderHtmlToPdfDetailed({
     { content: "table { border-collapse: collapse }" },
   ],
 });
+```
+
+External CSS can declare fonts with `@font-face`. Font URLs are resolved relative to the stylesheet file, then loaded through the same resource policy:
+
+```css
+@font-face {
+  font-family: "Report Sans";
+  src: url("./fonts/ReportSans-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Report Sans";
+  src: url("./fonts/ReportSans-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+}
+
+body { font-family: "Report Sans"; }
 ```
 
 ## Supported HTML
@@ -375,6 +396,7 @@ bun run example:fonts
 bun run example:bundled-fonts
 bun run example:table-showcase
 bun run example:resources
+bun run example:font-face
 bun run example:document
 bun run bench -- 10 100 --watermark
 ```

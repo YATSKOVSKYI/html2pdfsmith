@@ -21,6 +21,13 @@ export interface CssRule {
   order: number;
 }
 
+export interface CssFontFaceRule {
+  family: string;
+  srcs: string[];
+  fontWeight?: string;
+  fontStyle?: string;
+}
+
 export function parseStyleDeclarations(style: string): StyleMap {
   const out: StyleMap = {};
   for (const part of style.split(";")) {
@@ -60,6 +67,39 @@ export function parseCssRules(css: string): CssRule[] {
     }
   }
   return rules.sort((a, b) => a.specificity - b.specificity || a.order - b.order);
+}
+
+function unquote(value: string): string {
+  return value.trim().replace(/^['"]|['"]$/g, "");
+}
+
+function parseFontFaceSrcs(src: string | undefined): string[] {
+  if (!src) return [];
+  const out: string[] = [];
+  for (const match of src.matchAll(/url\(\s*(['"]?)(.*?)\1\s*\)/gi)) {
+    const value = match[2]?.trim();
+    if (value) out.push(value);
+  }
+  return out;
+}
+
+export function parseCssFontFaces(css: string): CssFontFaceRule[] {
+  const faces: CssFontFaceRule[] = [];
+  const cleaned = stripCssComments(css);
+  const re = /@font-face\s*\{([^{}]*)\}/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(cleaned))) {
+    const declarations = parseStyleDeclarations(match[1] ?? "");
+    const family = unquote(declarations["font-family"] ?? "");
+    const srcs = parseFontFaceSrcs(declarations["src"]);
+    if (!family || srcs.length === 0) continue;
+
+    const face: CssFontFaceRule = { family, srcs };
+    if (declarations["font-weight"]) face.fontWeight = declarations["font-weight"];
+    if (declarations["font-style"]) face.fontStyle = declarations["font-style"];
+    faces.push(face);
+  }
+  return faces;
 }
 
 function classList(el: Element): string[] {

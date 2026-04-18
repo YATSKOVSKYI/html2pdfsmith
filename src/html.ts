@@ -1,8 +1,8 @@
 import { parseDocument } from "htmlparser2";
 import type { AnyNode, Element } from "domhandler";
 import { DomUtils } from "htmlparser2";
-import { parseCssRules, resolveElementStyle, type CssRule } from "./css";
-import type { ParsedBlock, ParsedCell, ParsedDocument, ParsedInlineSegment, ParsedRow, ParsedTable } from "./types";
+import { parseCssFontFaces, parseCssRules, resolveElementStyle, type CssRule } from "./css";
+import type { ParsedBlock, ParsedCell, ParsedDocument, ParsedFontFace, ParsedInlineSegment, ParsedRow, ParsedTable } from "./types";
 
 function isElement(node: AnyNode | null | undefined): node is Element {
   return !!node && (node.type === "tag" || node.type === "style" || node.type === "script");
@@ -434,7 +434,9 @@ function parseContactItems(root: AnyNode[]): { items: string[]; qrSrc?: string }
 export function parsePrintableHtml(html: string): ParsedDocument {
   const doc = parseDocument(html, { decodeEntities: true });
   const roots = doc.children ?? [];
-  const rules = parseCssRules(styleText(roots));
+  const css = styleText(roots);
+  const rules = parseCssRules(css);
+  const fontFaces: ParsedFontFace[] = parseCssFontFaces(css);
 
   const brandEl = findFirst(roots, (el) => hasClass(el, "brand-name"));
   const titleEl = findFirst(roots, (el) => el.name.toLowerCase() === "title");
@@ -454,6 +456,7 @@ export function parsePrintableHtml(html: string): ParsedDocument {
   const parsed: ParsedDocument = {
     brandText: brandText || "DOCUMENT",
     contactItems: contacts.items,
+    fontFaces,
     blocks,
   };
   if (primaryTable) parsed.primaryTable = primaryTable;

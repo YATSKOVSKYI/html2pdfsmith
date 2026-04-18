@@ -10,7 +10,7 @@ import type { PdfResourcePolicy, PdfStylesheet, RenderHtmlToPdfOptions } from ".
 import type { WarningSink } from "./warnings";
 
 type ResourceKind = "data" | "http" | "file";
-type ResourceType = "image" | "stylesheet";
+type ResourceType = "image" | "stylesheet" | "font";
 
 interface ResolvedResource {
   kind: ResourceKind;
@@ -38,9 +38,9 @@ function timeoutMs(policy: PdfResourcePolicy | undefined): number {
 }
 
 function maxBytes(policy: PdfResourcePolicy | undefined, type: ResourceType): number {
-  return type === "image"
-    ? policy?.maxImageBytes ?? Number.POSITIVE_INFINITY
-    : policy?.maxStylesheetBytes ?? 1_000_000;
+  if (type === "image") return policy?.maxImageBytes ?? Number.POSITIVE_INFINITY;
+  if (type === "font") return policy?.maxFontBytes ?? 10_000_000;
+  return policy?.maxStylesheetBytes ?? 1_000_000;
 }
 
 function isDataUrl(value: string): boolean {
@@ -192,7 +192,31 @@ async function loadStylesheetSource(
 
   const loaded = await loadResource(source, "stylesheet", warnings, options);
   if (!loaded) return "";
-  return Buffer.from(loaded.bytes).toString("utf8");
+  return rebaseCssUrls(Buffer.from(loaded.bytes).toString("utf8"), source, options.baseUrl);
+}
+
+function cssUrlValue(resource: ResolvedResource): string {
+  if (resource.kind === "data" || resource.kind === "http") return resource.value;
+  return resource.value.replace(/\\/g, "/");
+}
+
+function rebaseCssUrls(css: string, stylesheetHref: string, documentBaseUrl: string | undefined): string {
+  const stylesheet = resolveResource(stylesheetHref, documentBaseUrl);
+  let stylesheetBase = documentBaseUrl;
+  if (stylesheet.kind === "http") {
+    stylesheetBase = new URL(".", stylesheet.value).toString();
+  } else if (stylesheet.kind === "file") {
+    stylesheetBase = dirname(stylesheet.value);
+  }
+
+  return css.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi, (_full, quote: string, raw: string) => {
+    const value = raw.trim();
+    if (!value || value.startsWith("#") || isDataUrl(value) || isHttpUrl(value) || isFileUrl(value) || isAbsolute(value)) {
+      return `url(${quote}${value}${quote})`;
+    }
+    const resolved = resolveResource(value, stylesheetBase);
+    return `url(${quote}${cssUrlValue(resolved)}${quote})`;
+  });
 }
 
 function injectStyles(html: string, css: string): string {

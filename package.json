@@ -27,6 +27,7 @@
     "example:bundled-fonts": "bun run examples/bundled-fonts.ts",
     "example:table-showcase": "bun run examples/table-showcase.ts",
     "example:resources": "bun run examples/base-url-resources.ts",
+    "example:font-face": "bun run examples/font-face.ts",
     "bench": "bun --expose-gc run examples/bench-table.ts",
     "smoke": "bun run examples/smoke.ts",
     "test:fonts": "bun run examples/test-google-fonts.ts"

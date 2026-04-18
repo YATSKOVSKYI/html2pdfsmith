@@ -67,6 +67,31 @@ if (baseUrlResources.warnings.length > 1) {
 }
 console.log({ name: "base-url-resources", pages: baseUrlResources.pages, bytes: baseUrlResources.pdf.byteLength, warnings: baseUrlResources.warnings.length });
 
+const fontFace = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head>
+    <link rel="stylesheet" href="assets/font-face.css">
+  </head><body>
+    <h1>Font Face Smoke</h1>
+    <table><tbody><tr><td>Regular</td><td><strong><em>Bold italic</em></strong></td></tr></tbody></table>
+  </body></html>`,
+  baseUrl: fileURLToPath(new URL("./", import.meta.url)),
+  resourcePolicy: {
+    allowHttp: false,
+    allowFile: true,
+    allowData: true,
+    maxFontBytes: 1_000_000,
+    maxStylesheetBytes: 100_000,
+  },
+});
+const fontFaceLoaded = await PDFDocument.load(fontFace.pdf);
+if (fontFaceLoaded.getPageCount() !== fontFace.pages) {
+  throw new Error("font face: reported page count mismatch");
+}
+if (fontFace.warnings.length !== 0) {
+  throw new Error(`font face: unexpected warnings ${JSON.stringify(fontFace.warnings)}`);
+}
+console.log({ name: "font-face-css", pages: fontFace.pages, bytes: fontFace.pdf.byteLength, warnings: fontFace.warnings.length });
+
 await assertPdf("document-blocks", `<!doctype html><html><body>
   <style>
     .quote { background-color: #f6f8fa; border-color: #94a3b8; }

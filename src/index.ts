@@ -2,6 +2,7 @@ export type {
   PageOrientation,
   ParsedCell,
   ParsedDocument,
+  ParsedFontFace,
   ParsedRow,
   ParsedTable,
   PdfBundledFontFace,

@@ -16,6 +16,7 @@ export interface PdfResourcePolicy {
   timeoutMs?: number;
   maxImageBytes?: number;
   maxStylesheetBytes?: number;
+  maxFontBytes?: number;
 }
 
 export interface PdfBundledFontFace {
@@ -135,8 +136,16 @@ export interface ParsedDocument {
   brandText: string;
   contactItems: string[];
   contactQrSrc?: string;
+  fontFaces: ParsedFontFace[];
   blocks: ParsedBlock[];
   primaryTable?: ParsedTable;
+}
+
+export interface ParsedFontFace {
+  family: string;
+  srcs: string[];
+  fontWeight?: string;
+  fontStyle?: string;
 }
 
 export interface ParsedInlineSegment {
