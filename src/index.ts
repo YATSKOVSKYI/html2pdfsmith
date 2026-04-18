@@ -4,11 +4,13 @@ export type {
   ParsedDocument,
   ParsedRow,
   ParsedTable,
+  PdfBundledFontFace,
   PdfFontOptions,
   PdfPageOptions,
   RenderHtmlToPdfOptions,
   RenderHtmlToPdfResult,
   RenderWarning,
+  WatermarkLayer,
   WatermarkPattern,
 } from "./types";
 

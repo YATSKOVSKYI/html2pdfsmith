@@ -1,0 +1,35 @@
+{
+  "name": "@html2pdfsmith/fonts",
+  "version": "0.1.0",
+  "description": "Optional bundled fonts for Html2PdfSmith offline PDF rendering.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src",
+    "fonts",
+    "licenses",
+    "README.md"
+  ],
+  "scripts": {
+    "download": "bun run scripts/download-fonts.ts"
+  },
+  "keywords": [
+    "html2pdfsmith",
+    "pdf",
+    "fonts",
+    "google-fonts",
+    "bun",
+    "typescript"
+  ],
+  "license": "MIT",
+  "engines": {
+    "bun": ">=1.2.0"
+  }
+}

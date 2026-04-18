@@ -47,7 +47,7 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 - image support for PNG, JPEG, SVG, data URLs, local files, and HTTP(S) URLs
 - PNG/JPEG natural aspect-ratio handling when only width or height is provided
 - text and image watermarks
-- custom font paths, font bytes, optional Google Fonts disk cache, and optional system font discovery
+- custom font paths, font bytes, optional bundled fonts, optional Google Fonts disk cache, and optional system font discovery
 - optional `qpdf` owner-password protection
 - warnings API for non-fatal rendering issues
 
@@ -99,6 +99,7 @@ const result = await renderHtmlToPdfDetailed({
   pageNumbers: { format: "Page {page}", align: "right" },
   watermarkText: "CONFIDENTIAL",
   watermarkOpacity: 12,
+  watermarkLayer: "foreground",
   font: { googleFont: "Inter" },
 });
 
@@ -146,10 +147,13 @@ interface RenderHtmlToPdfResult {
 | `watermarkUrl` | `string \| null` | Image watermark |
 | `watermarkOpacity` | `number` | Watermark opacity, `0..100` or `0..1` |
 | `watermarkScale` | `number` | Watermark size scale |
+| `watermarkLayer` | `"background" \| "foreground" \| "both"` | Draw watermark behind content, above content, or both |
 | `patternType` | `string` | Watermark pattern hint |
 | `userLogoUrl` | `string \| null` | Logo image for the document header |
 | `font.googleFont` | `string` | Google Fonts family name, cached to disk |
 | `font.googleFonts` | `string[]` | Additional Google Fonts selectable with CSS `font-family` |
+| `font.bundled` | `PdfBundledFontFace` | Default offline font from an optional bundled-font package |
+| `font.bundledFonts` | `PdfBundledFontFace[]` | Additional offline fonts selectable with CSS `font-family` |
 | `font.regularPath` | `string` | Path to regular font |
 | `font.boldPath` | `string` | Path to bold font |
 | `font.italicPath` | `string` | Path to italic font |
@@ -220,7 +224,39 @@ Out of scope for now:
 
 For Latin-only documents, the default built-in PDF fonts are the lightest option.
 
-For production documents, prefer explicit fonts or Google Fonts:
+For production documents, prefer bundled fonts, explicit fonts, or Google Fonts.
+
+Bundled fonts are best when production must render offline without first-run network downloads:
+
+```ts
+import { renderHtmlToPdfDetailed } from "html2pdfsmith";
+import { bundledFonts } from "@html2pdfsmith/fonts";
+
+const result = await renderHtmlToPdfDetailed({
+  html,
+  font: {
+    bundled: bundledFonts.openSans,
+    bundledFonts: [
+      bundledFonts.ubuntu,
+      bundledFonts.anton,
+      bundledFonts.merriweather,
+      bundledFonts.notoSans,
+    ],
+  },
+});
+```
+
+Then CSS can select those families:
+
+```css
+h1 { font-family: "Anton"; }
+td.note { font-family: "Ubuntu"; font-style: italic; }
+td.body { font-family: "Open Sans"; }
+```
+
+The optional package currently includes Open Sans, Ubuntu, Anton, Roboto Condensed, Merriweather, and Noto Sans. It lives outside the core renderer so the main package stays small.
+
+Google Fonts are useful when you do not want to vendor fonts:
 
 ```ts
 const pdf = await renderHtmlToPdf({
@@ -295,6 +331,7 @@ bun run smoke
 bun run example
 bun run example:css-table
 bun run example:fonts
+bun run example:bundled-fonts
 bun run example:document
 bun run bench -- 10 100 --watermark
 ```

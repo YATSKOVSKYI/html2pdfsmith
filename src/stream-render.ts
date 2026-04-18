@@ -8,6 +8,7 @@ import { resolveGoogleFont } from "./google-fonts";
 import { parsePrintableHtml } from "./html";
 import type {
   PageOrientation,
+  PdfBundledFontFace,
   ParsedBlock,
   ParsedCell,
   ParsedDocument,
@@ -258,6 +259,12 @@ function googleFontFamilies(options: RenderHtmlToPdfOptions): string[] {
   return [...new Map(families.map((family) => [family.toLowerCase(), family])).values()];
 }
 
+function bundledFontFaces(options: RenderHtmlToPdfOptions): PdfBundledFontFace[] {
+  const faces = [options.font?.bundled, ...(options.font?.bundledFonts ?? [])]
+    .filter((face): face is PdfBundledFontFace => Boolean(face?.family && face.regularPath));
+  return [...new Map(faces.map((face) => [face.family.trim().toLowerCase(), face])).values()];
+}
+
 function registerFontPair(doc: PdfKitDocument, family: string, paths: { regularPath?: string; boldPath?: string; italicPath?: string; boldItalicPath?: string }, warnings: WarningSink): RegisteredFontPair | null {
   const regularPath = paths.regularPath;
   const boldPath = paths.boldPath ?? regularPath;
@@ -265,10 +272,10 @@ function registerFontPair(doc: PdfKitDocument, family: string, paths: { regularP
   const boldItalicPath = paths.boldItalicPath ?? boldPath ?? italicPath;
   if (!regularPath || !existsSync(regularPath)) return null;
   const slug = normalizeFontFamily(family)?.replace(/[^a-z0-9_-]+/g, "-") ?? `font-${Date.now()}`;
-  const regularName = `gf-${slug}-regular`;
-  const boldName = `gf-${slug}-bold`;
-  const italicName = `gf-${slug}-italic`;
-  const boldItalicName = `gf-${slug}-bold-italic`;
+  const regularName = `font-${slug}-regular`;
+  const boldName = `font-${slug}-bold`;
+  const italicName = `font-${slug}-italic`;
+  const boldItalicName = `font-${slug}-bold-italic`;
   try {
     doc.registerFont(regularName, regularPath);
     if (boldPath && existsSync(boldPath)) doc.registerFont(boldName, boldPath);
@@ -279,7 +286,7 @@ function registerFontPair(doc: PdfKitDocument, family: string, paths: { regularP
     else doc.registerFont(boldItalicName, boldPath ?? italicPath ?? regularPath);
     return { regular: regularName, bold: boldName, italic: italicName, boldItalic: boldItalicName };
   } catch (error) {
-    warnings.add("google_font_register_failed", `Could not register Google Font "${family}": ${String(error)}`);
+    warnings.add("font_family_register_failed", `Could not register font family "${family}": ${String(error)}`);
     return null;
   }
 }
@@ -295,6 +302,12 @@ async function registerFonts(doc: PdfKitDocument, options: RenderHtmlToPdfOption
     if (!paths) continue;
     const pair = registerFontPair(doc, family, paths, warnings);
     const normalized = normalizeFontFamily(family);
+    if (pair && normalized) families.set(normalized, pair);
+  }
+
+  for (const face of bundledFontFaces(options)) {
+    const pair = registerFontPair(doc, face.family, face, warnings);
+    const normalized = normalizeFontFamily(face.family);
     if (pair && normalized) families.set(normalized, pair);
   }
 
@@ -356,7 +369,17 @@ function drawAssetSafely(ctx: StreamContext, asset: LoadedPdfKitAsset, x: number
   }
 }
 
-function drawWatermark(ctx: StreamContext): void {
+function watermarkLayer(options: RenderHtmlToPdfOptions): "background" | "foreground" | "both" {
+  return options.watermarkLayer ?? "background";
+}
+
+function shouldDrawWatermark(ctx: StreamContext, layer: "background" | "foreground"): boolean {
+  const configured = watermarkLayer(ctx.options);
+  return configured === "both" || configured === layer;
+}
+
+function drawWatermark(ctx: StreamContext, layer: "background" | "foreground"): void {
+  if (!shouldDrawWatermark(ctx, layer)) return;
   const text = ctx.options.watermarkText?.trim();
   const asset = ctx.watermarkAsset;
   if (!text && !asset) return;
@@ -456,10 +479,15 @@ function drawPageChrome(ctx: StreamContext): void {
   });
 }
 
+function finishPage(ctx: StreamContext): void {
+  drawWatermark(ctx, "foreground");
+}
+
 function addPage(ctx: StreamContext): void {
+  finishPage(ctx);
   ctx.doc.addPage({ size: ctx.options.page?.size ?? "A4", layout: pageLayout(ctx.orientation), margin: 0 });
   ctx.y = ctx.contentTop;
-  drawWatermark(ctx);
+  drawWatermark(ctx, "background");
   drawPageChrome(ctx);
 }
 
@@ -992,10 +1020,11 @@ export async function renderHtmlToPdfDetailed(
   const parsed = parsePrintableHtml(options.html);
   const { ctx, done } = await createStreamContext(options, parsed, warnings);
 
-  drawWatermark(ctx);
+  drawWatermark(ctx, "background");
   drawPageChrome(ctx);
   drawHeader(ctx);
   for (const block of parsed.blocks) await drawBlock(ctx, block);
+  finishPage(ctx);
   ctx.doc.end();
 
   let pdf: Uint8Array = new Uint8Array(await done);

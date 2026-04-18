@@ -1,5 +1,16 @@
 export type PageOrientation = "portrait" | "landscape";
 export type WatermarkPattern = "auto" | "minimal" | "diagonal" | "triangle" | "corners" | "honeycomb" | "none";
+export type WatermarkLayer = "background" | "foreground" | "both";
+
+export interface PdfBundledFontFace {
+  family: string;
+  regularPath: string;
+  boldPath?: string;
+  italicPath?: string;
+  boldItalicPath?: string;
+  license?: string;
+  source?: string;
+}
 
 export interface PdfFontOptions {
   regularPath?: string;
@@ -25,6 +36,15 @@ export interface PdfFontOptions {
    * inside the document, e.g. `font-family: "Roboto"`.
    */
   googleFonts?: string[];
+  /**
+   * Optional pre-bundled font face. Use this for offline/no-network rendering.
+   * Takes priority over `googleFont` but is overridden by explicit paths/bytes.
+   */
+  bundled?: PdfBundledFontFace;
+  /**
+   * Additional pre-bundled fonts that can be selected with CSS `font-family`.
+   */
+  bundledFonts?: PdfBundledFontFace[];
   /**
    * When true, the renderer may auto-discover large system fonts for CJK/Cyrillic coverage.
    * Keep false for lowest memory; pass explicit small/subset fonts in production.
@@ -74,6 +94,7 @@ export interface RenderHtmlToPdfOptions {
   logoScale?: number;
   watermarkScale?: number;
   watermarkOpacity?: number;
+  watermarkLayer?: WatermarkLayer;
   patternType?: WatermarkPattern | string;
   pageHeader?: PdfPageTemplateOptions;
   pageFooter?: PdfPageTemplateOptions;

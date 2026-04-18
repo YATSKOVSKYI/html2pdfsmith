@@ -94,3 +94,20 @@ if (fontFallbackLoaded.getPageCount() !== fontFallback.pages) {
   throw new Error("font table: reported page count mismatch");
 }
 console.log({ name: "font-table-css", pages: fontFallback.pages, bytes: fontFallback.pdf.byteLength, warnings: fontFallback.warnings.length });
+
+for (const layer of ["background", "foreground", "both"] as const) {
+  const watermarked = await renderHtmlToPdfDetailed({
+    html: `<!doctype html><html><body>
+      <p style="page-break-after: always">Watermark layer ${layer} page 1.</p>
+      <p>Watermark layer ${layer} page 2.</p>
+    </body></html>`,
+    watermarkText: layer.toUpperCase(),
+    watermarkLayer: layer,
+    watermarkOpacity: 0.08,
+  });
+  const loaded = await PDFDocument.load(watermarked.pdf);
+  if (loaded.getPageCount() !== watermarked.pages || watermarked.pages !== 2) {
+    throw new Error(`watermark ${layer}: expected 2 pages, got ${watermarked.pages}`);
+  }
+  console.log({ name: `watermark-${layer}`, pages: watermarked.pages, bytes: watermarked.pdf.byteLength, warnings: watermarked.warnings.length });
+}

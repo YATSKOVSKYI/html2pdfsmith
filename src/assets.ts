@@ -126,9 +126,10 @@ export async function loadFontBytes(pathOrBytes: string | Uint8Array | undefined
 /**
  * Resolve the font file paths from all possible sources, in priority order:
  * 1. Explicit `regularPath`/`boldPath` (user-provided)
- * 2. Google Fonts `googleFont` (downloaded once, cached to disk)
- * 3. Auto-discover system fonts (`autoDiscover: true`)
- * 4. Fallback (returns empty → renderer uses Helvetica)
+ * 2. Bundled fonts from an optional package (offline, no network)
+ * 3. Google Fonts `googleFont` (downloaded once, cached to disk)
+ * 4. Auto-discover system fonts (`autoDiscover: true`)
+ * 5. Fallback (returns empty → renderer uses Helvetica)
  *
  * Google Fonts paths are cached to disk, so after the first download this
  * function is just two `existsSync()` calls — zero network, zero extra RAM.
@@ -150,18 +151,28 @@ export async function resolveFontPaths(
     return result;
   }
 
-  // 2. Google Fonts — disk-cached TTF files
+  // 2. Bundled fonts - local files shipped by an optional package
+  if (fontOptions?.bundled) {
+    return {
+      regularPath: fontOptions.bundled.regularPath,
+      boldPath: fontOptions.bundled.boldPath ?? fontOptions.bundled.regularPath,
+      italicPath: fontOptions.bundled.italicPath ?? fontOptions.bundled.regularPath,
+      boldItalicPath: fontOptions.bundled.boldItalicPath ?? fontOptions.bundled.boldPath ?? fontOptions.bundled.italicPath ?? fontOptions.bundled.regularPath,
+    };
+  }
+
+  // 3. Google Fonts - disk-cached TTF files
   if (fontOptions?.googleFont) {
     const result = await resolveGoogleFont(fontOptions.googleFont, warnings);
     if (result) return result;
     // Falls through to auto-discover or fallback if download failed
   }
 
-  // 3. Auto-discover system fonts
+  // 4. Auto-discover system fonts
   if (fontOptions?.autoDiscover) {
     return discoverFontPaths();
   }
 
-  // 4. No fonts configured
+  // 5. No fonts configured
   return {};
 }
