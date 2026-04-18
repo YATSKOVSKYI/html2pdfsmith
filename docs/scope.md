@@ -20,6 +20,8 @@
 - horizontal wide-table pagination with repeated left columns
 - fixed table layout with `colgroup` column widths
 - cell background colors for highlights
+- cell and block background images
+- rounded cells/blocks and simplified shadows
 - section rows
 - horizontal and vertical cell alignment
 - text wrapping
@@ -71,6 +73,10 @@ CSS support is intentionally pragmatic. The renderer recognizes common class nam
 - `white-space` and `text-overflow`
 - cell image `width`, `height`, `object-fit`, and `object-position`
 - image `opacity`, `transform`, `transform-origin`, and `-webkit-transform` aliases
+- `background-image`, `background-size`, `background-position`, and `background-repeat`
+- `border-radius`
+- simplified `box-shadow`
+- `text-transform`
 - block `margin`, `padding`, and `border`
 - `line-height`
 - `text-decoration`

@@ -117,6 +117,15 @@ interface CellBorderStyle {
   left: BorderStyle;
 }
 
+interface BoxShadow {
+  offsetX: number;
+  offsetY: number;
+  blur: number;
+  spread: number;
+  color: string;
+  opacity: number;
+}
+
 interface TextBoxStyle {
   margin: BoxSpacing;
   padding: BoxSpacing;
@@ -236,6 +245,34 @@ function cellPadding(ctx: StreamContext, cell: ParsedCell): BoxSpacing {
     bottom: ctx.cellPaddingY * 96 / 72,
     left: ctx.cellPaddingX * 96 / 72,
   }));
+}
+
+function borderRadiusPt(styles: StyleMap, width: number, height: number): number {
+  const raw = styles["border-radius"]?.trim().split(/\s+/)[0];
+  const radius = cssLengthPt(raw, Math.min(width, height)) ?? 0;
+  return clamp(radius, 0, Math.min(width, height) / 2);
+}
+
+function fillBox(ctx: StreamContext, x: number, y: number, width: number, height: number, color: string, radius = 0): void {
+  if (radius > 0) ctx.doc.roundedRect(x, y, width, height, radius).fill(color);
+  else ctx.doc.rect(x, y, width, height).fill(color);
+}
+
+function strokeBox(ctx: StreamContext, x: number, y: number, width: number, height: number, border: BorderStyle, radius = 0): void {
+  if (border.width <= 0 || border.style === "none") return;
+  ctx.doc.save();
+  ctx.doc.strokeColor(border.color ?? COLORS.border).lineWidth(border.width);
+  if (border.style === "dashed") ctx.doc.dash(Math.max(2, border.width * 3), { space: Math.max(2, border.width * 2) });
+  if (border.style === "dotted") ctx.doc.dash(Math.max(0.7, border.width), { space: Math.max(1.4, border.width * 2) });
+  if (radius > 0) ctx.doc.roundedRect(x, y, width, height, radius).stroke();
+  else ctx.doc.rect(x, y, width, height).stroke();
+  ctx.doc.undash();
+  ctx.doc.restore();
+}
+
+function clipBox(ctx: StreamContext, x: number, y: number, width: number, height: number, radius = 0): void {
+  if (radius > 0) ctx.doc.roundedRect(x, y, Math.max(1, width), Math.max(1, height), radius).clip();
+  else ctx.doc.rect(x, y, Math.max(1, width), Math.max(1, height)).clip();
 }
 
 function spacingPt(styles: StyleMap, property: "padding" | "margin", fallback: BoxSpacing): BoxSpacing {
@@ -553,6 +590,118 @@ function cssOpacity(styles: StyleMap | undefined, fallback = 1): number {
   const value = Number.parseFloat(trimmed);
   if (!Number.isFinite(value)) return fallback;
   return clamp(trimmed.endsWith("%") ? value / 100 : value, 0, 1);
+}
+
+function cssUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const match = /url\(\s*(['"]?)(.*?)\1\s*\)/i.exec(value);
+  const url = match?.[2]?.trim();
+  return url || undefined;
+}
+
+function backgroundPositionStyles(styles: StyleMap): StyleMap {
+  return {
+    "object-fit": styles["background-size"] ?? "cover",
+    "object-position": styles["background-position"] ?? "center center",
+  };
+}
+
+function backgroundTileSize(ctx: StreamContext, asset: LoadedPdfKitAsset, width: number, height: number, styles: StyleMap): { width: number; height: number } {
+  const raw = (styles["background-size"] ?? "cover").trim().toLowerCase();
+  const natural = imageDimensions(asset);
+  if (raw === "cover" || raw === "contain") return { width, height };
+  if (raw === "auto") {
+    return natural ? { width: pxToPt(natural.width), height: pxToPt(natural.height) } : { width, height };
+  }
+
+  const parts = raw.split(/\s+/).filter(Boolean);
+  const cssWidth = cssLengthPt(parts[0], width);
+  const cssHeight = cssLengthPt(parts[1], height);
+  let tileWidth = cssWidth ?? (natural ? pxToPt(natural.width) : width);
+  let tileHeight = cssHeight ?? (natural ? pxToPt(natural.height) : height);
+  if (natural && cssWidth != null && cssHeight == null) tileHeight = tileWidth * natural.height / natural.width;
+  if (natural && cssHeight != null && cssWidth == null) tileWidth = tileHeight * natural.width / natural.height;
+  return { width: Math.max(1, tileWidth), height: Math.max(1, tileHeight) };
+}
+
+async function drawBackgroundImage(ctx: StreamContext, styles: StyleMap, x: number, y: number, width: number, height: number, radius = 0): Promise<void> {
+  const src = cssUrl(styles["background-image"]);
+  if (!src) return;
+  const asset = await getAsset(ctx, src);
+  if (!asset) return;
+
+  const repeat = (styles["background-repeat"] ?? "no-repeat").trim().toLowerCase();
+  const tile = backgroundTileSize(ctx, asset, width, height, styles);
+  const positionStyles = backgroundPositionStyles(styles);
+
+  ctx.doc.save();
+  clipBox(ctx, x, y, width, height, radius);
+  if (repeat === "repeat" || repeat === "repeat-x" || repeat === "repeat-y") {
+    const maxX = repeat === "repeat-y" ? x : x + width;
+    const maxY = repeat === "repeat-x" ? y : y + height;
+    for (let ty = y; ty < maxY; ty += tile.height) {
+      for (let tx = x; tx < maxX; tx += tile.width) {
+        drawAssetInBox(ctx, asset, tx, ty, tile.width, tile.height, positionStyles, cssOpacity(styles), "background image");
+      }
+    }
+  } else {
+    const position = objectPositionFromStyle(positionStyles);
+    const tx = positionedStart(x, width, tile.width, position.x);
+    const ty = positionedStart(y, height, tile.height, position.y);
+    drawAssetInBox(ctx, asset, tx, ty, tile.width, tile.height, positionStyles, cssOpacity(styles), "background image");
+  }
+  ctx.doc.restore();
+}
+
+function colorOpacity(value: string | undefined): number {
+  if (!value) return 1;
+  const rgba = /rgba?\(([^)]+)\)/i.exec(value);
+  if (!rgba?.[1]) return 1;
+  const parts = rgba[1].split(",").map((part) => part.trim());
+  const alpha = Number.parseFloat(parts[3] ?? "1");
+  return Number.isFinite(alpha) ? clamp(alpha, 0, 1) : 1;
+}
+
+function parseBoxShadow(styles: StyleMap): BoxShadow | undefined {
+  const raw = styles["box-shadow"]?.trim();
+  if (!raw || raw === "none" || raw.includes("inset")) return undefined;
+  const rgbaMatch = /rgba?\([^)]+\)/i.exec(raw);
+  const hexMatch = /#[0-9a-f]{3,8}/i.exec(raw);
+  const namedMatch = raw.split(/\s+/).find((token) => parseCssColor(token) && !/[0-9]/.test(token));
+  const colorRaw = rgbaMatch?.[0] ?? hexMatch?.[0] ?? namedMatch;
+  const color = parseCssColor(colorRaw) ?? "#000000";
+  const opacity = colorOpacity(colorRaw) * 0.25;
+  const lengths = raw
+    .replace(colorRaw ?? "", "")
+    .trim()
+    .split(/\s+/)
+    .map((token) => cssLengthPt(token))
+    .filter((value): value is number => value != null);
+  if (lengths.length < 2) return undefined;
+  return {
+    offsetX: lengths[0] ?? 0,
+    offsetY: lengths[1] ?? 0,
+    blur: lengths[2] ?? 0,
+    spread: lengths[3] ?? 0,
+    color,
+    opacity,
+  };
+}
+
+function drawBoxShadow(ctx: StreamContext, styles: StyleMap, x: number, y: number, width: number, height: number, radius = 0): void {
+  const shadow = parseBoxShadow(styles);
+  if (!shadow) return;
+  const spread = shadow.spread + shadow.blur * 0.18;
+  ctx.doc.save();
+  ctx.doc.opacity(clamp(shadow.opacity, 0.02, 0.45));
+  const sx = x + shadow.offsetX - spread;
+  const sy = y + shadow.offsetY - spread;
+  const sw = width + spread * 2;
+  const sh = height + spread * 2;
+  if (radius > 0) ctx.doc.roundedRect(sx, sy, sw, sh, radius + spread).fill(shadow.color);
+  else ctx.doc.rect(sx, sy, sw, sh).fill(shadow.color);
+  ctx.doc.restore();
+  ctx.doc.opacity(1);
 }
 
 function transformValue(styles: StyleMap | undefined): string {
@@ -1011,6 +1160,14 @@ function wrapModeFromStyle(style: StyleMap, fallback: TextOverflowWrap | undefin
   return fallback ?? "normal";
 }
 
+function applyTextTransform(value: string, style: StyleMap): string {
+  const transform = (style["text-transform"] ?? "").trim().toLowerCase();
+  if (transform === "uppercase") return value.toUpperCase();
+  if (transform === "lowercase") return value.toLowerCase();
+  if (transform === "capitalize") return value.replace(/\b([\p{L}\p{N}])/gu, (match) => match.toUpperCase());
+  return value;
+}
+
 function isNoWrapStyle(style: StyleMap): boolean {
   const value = (style["white-space"] ?? "").trim().toLowerCase();
   return value === "nowrap" || value === "pre";
@@ -1038,12 +1195,13 @@ function breakLongToken(doc: PdfKitDocument, font: string, size: number, token: 
 }
 
 function wrapSegmentText(ctx: StreamContext, segment: ParsedInlineSegment, fallbackFont: string, fallbackSize: number, width: number): string {
+  const transformedText = applyTextTransform(segment.text, segment.styles);
   const mode = wrapModeFromStyle(segment.styles, ctx.options.text?.overflowWrap);
-  if (mode === "normal" || width <= 0) return segment.text;
+  if (mode === "normal" || width <= 0) return transformedText;
   const font = inlineFont(ctx, segment, fallbackFont);
   const size = inlineSize(segment, fallbackSize);
-  if (mode === "anywhere") return breakLongToken(ctx.doc, font, size, segment.text, width);
-  return segment.text.split(/(\s+)/).map((part) => /\s+/.test(part) ? part : breakLongToken(ctx.doc, font, size, part, width)).join("");
+  if (mode === "anywhere") return breakLongToken(ctx.doc, font, size, transformedText, width);
+  return transformedText.split(/(\s+)/).map((part) => /\s+/.test(part) ? part : breakLongToken(ctx.doc, font, size, part, width)).join("");
 }
 
 function wrappedInlineSegments(ctx: StreamContext, inlines: ParsedInlineSegment[], fallbackFont: string, fallbackSize: number, width: number): ParsedInlineSegment[] {
@@ -1076,7 +1234,7 @@ function displayInlineSegments(
 ): ParsedInlineSegment[] {
   const base = inlines.length > 0 ? inlines : [{ text, styles: style }];
   if (isNoWrapStyle(style) && wantsEllipsis(style)) {
-    const plain = base.map((segment) => segment.text).join("").replace(/\n+/g, " ");
+    const plain = base.map((segment) => applyTextTransform(segment.text, { ...style, ...segment.styles })).join("").replace(/\n+/g, " ");
     return [{ text: ellipsizeText(ctx, plain, fallbackFont, fallbackSize, width), styles: base[0]?.styles ?? style }];
   }
   return wrappedInlineSegments(ctx, base, fallbackFont, fallbackSize, width);
@@ -1146,7 +1304,7 @@ function drawInlineText(
   if (!first) ctx.doc.text("", { continued: false });
 }
 
-function drawTextBlock(ctx: StreamContext, block: Extract<ParsedBlock, { type: "heading" | "paragraph" | "list-item" | "blockquote" | "preformatted" }>): void {
+async function drawTextBlock(ctx: StreamContext, block: Extract<ParsedBlock, { type: "heading" | "paragraph" | "list-item" | "blockquote" | "preformatted" }>): Promise<void> {
   const size = blockFontSize(block);
   const font = block.type === "heading" || block.style["font-weight"] === "bold" || Number(block.style["font-weight"]) >= 600
     ? ctx.boldFontName
@@ -1172,8 +1330,11 @@ function drawTextBlock(ctx: StreamContext, block: Extract<ParsedBlock, { type: "
   ctx.y += box.margin.top;
 
   const bg = parseCssColor(block.style["background-color"]) ?? (block.type === "preformatted" ? "#f6f8fa" : undefined);
-  if (bg) ctx.doc.rect(boxX, ctx.y, boxWidth, boxHeight).fill(bg);
-  if (box.border.width > 0) ctx.doc.rect(boxX, ctx.y, boxWidth, boxHeight).strokeColor(box.border.color ?? COLORS.border).lineWidth(box.border.width).stroke();
+  const radius = borderRadiusPt(block.style, boxWidth, boxHeight);
+  drawBoxShadow(ctx, block.style, boxX, ctx.y, boxWidth, boxHeight, radius);
+  if (bg) fillBox(ctx, boxX, ctx.y, boxWidth, boxHeight, bg, radius);
+  await drawBackgroundImage(ctx, block.style, boxX, ctx.y, boxWidth, boxHeight, radius);
+  strokeBox(ctx, boxX, ctx.y, boxWidth, boxHeight, box.border, radius);
   if (block.type === "blockquote") {
     const border = parseBorderStyle(block.style, { width: 3 * 96 / 72, color: parseCssColor(block.style["border-color"]) ?? COLORS.border });
     ctx.doc.rect(boxX, ctx.y, Math.max(2, pxToPt(border.width)), boxHeight).fill(border.color ?? COLORS.border);
@@ -1347,6 +1508,7 @@ async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promi
     const width = ctx.columnWidths.slice(col, col + span).reduce((sum, value) => sum + value, 0);
     const padding = cellPadding(ctx, cell);
     const border = cellBorders(ctx, cell);
+    const radius = borderRadiusPt(cell.styles, width, height);
     const fill = cell.isDiff
       ? (parseCssColor(cell.styles["background-color"]) ?? COLORS.diffBg)
       : row.kind === "header" || row.kind === "price"
@@ -1357,7 +1519,9 @@ async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promi
             ? (parseCssColor(row.styles["background-color"]) ?? COLORS.evenBg)
             : parseCssColor(cell.styles["background-color"]) ?? parseCssColor(row.styles["background-color"]) ?? null;
 
-    if (fill) ctx.doc.rect(x, y, width, height).fill(fill);
+    if (!cell.isSpanPlaceholder) drawBoxShadow(ctx, cell.styles, x, y, width, height, radius);
+    if (fill) fillBox(ctx, x, y, width, height, fill, radius);
+    if (!cell.isSpanPlaceholder) await drawBackgroundImage(ctx, cell.styles, x, y, width, height, radius);
     strokeCellBorder(ctx, cell, x, y, width, height, border);
 
     if (cell.isSpanPlaceholder) {
@@ -1721,7 +1885,7 @@ async function drawTableBlock(ctx: StreamContext, block: Extract<ParsedBlock, { 
 
 async function drawBlock(ctx: StreamContext, block: ParsedBlock): Promise<void> {
   if (block.type === "heading" || block.type === "paragraph" || block.type === "list-item" || block.type === "blockquote" || block.type === "preformatted") {
-    drawTextBlock(ctx, block);
+    await drawTextBlock(ctx, block);
   } else if (block.type === "image") {
     await drawImageBlock(ctx, block);
   } else if (block.type === "hr") {

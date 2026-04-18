@@ -34,6 +34,7 @@
     "example:alignment": "bun run examples/alignment-controls.ts",
     "example:transform": "bun run examples/transform-controls.ts",
     "example:layout": "bun run examples/layout-controls.ts",
+    "example:visual-css": "bun run examples/visual-css-controls.ts",
     "bench": "bun --expose-gc run examples/bench-table.ts",
     "smoke": "bun run examples/smoke.ts",
     "test:fonts": "bun run examples/test-google-fonts.ts"

@@ -251,6 +251,25 @@ if (layoutLoaded.getPageCount() !== layoutControls.pages) {
 }
 console.log({ name: "layout-controls", pages: layoutControls.pages, bytes: layoutControls.pdf.byteLength, warnings: layoutControls.warnings.length });
 
+const visualBg = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="#eff6ff"/><path d="M0 32L32 0" stroke="#93c5fd" stroke-width="4"/></svg>`)}`;
+const visualCss = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    .card { padding: 10px; margin-bottom: 8px; border-radius: 6px; background-color: #fff; background-image: url("${visualBg}"); background-size: 32px 32px; background-repeat: repeat; box-shadow: 0 4px 10px rgba(15, 23, 42, .22); text-transform: capitalize; }
+    table { width: 100%; border-collapse: collapse; }
+    td { height: 60px; border: 1px solid #bbb; padding: 6px; border-radius: 6px; background-image: url("${visualBg}"); background-size: contain; background-repeat: no-repeat; background-position: center center; text-transform: uppercase; }
+  </style></head><body>
+    <div class="card">visual css controls</div>
+    <table><tbody><tr><td>approved</td><td style="box-shadow: 0 4px 8px rgba(0,0,0,.2)">shadow cell</td></tr></tbody></table>
+  </body></html>`,
+  hideHeader: true,
+  resourcePolicy: { allowData: true },
+});
+const visualLoaded = await PDFDocument.load(visualCss.pdf);
+if (visualLoaded.getPageCount() !== visualCss.pages) {
+  throw new Error("visual css: reported page count mismatch");
+}
+console.log({ name: "visual-css-controls", pages: visualCss.pages, bytes: visualCss.pdf.byteLength, warnings: visualCss.warnings.length });
+
 await assertPdf("document-blocks", `<!doctype html><html><body>
   <style>
     .quote { background-color: #f6f8fa; border-color: #94a3b8; }

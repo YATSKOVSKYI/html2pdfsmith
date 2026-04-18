@@ -48,6 +48,7 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 - cross-platform image transforms: `transform`, `transform-origin`, `-webkit-transform`, `-webkit-transform-origin`, `opacity`
 - table layout controls: `colgroup`, `table-layout: fixed`, `white-space`, `text-overflow: ellipsis`
 - per-side borders: `border-top`, `border-right`, `border-bottom`, `border-left`, dashed and dotted lines
+- visual CSS: `background-image`, `background-size`, `background-position`, `background-repeat`, `border-radius`, `box-shadow`, `text-transform`
 - image support for PNG, JPEG, SVG, data URLs, local files, and HTTP(S) URLs
 - PNG/JPEG natural aspect-ratio handling when only width or height is provided
 - text and image watermarks
@@ -271,7 +272,12 @@ The CSS support is intentionally pragmatic:
 - `font-weight`
 - `color`
 - `background-color`
+- `background-image: url(...)`
+- `background-size: cover`, `background-size: contain`, `background-size: auto`, and explicit sizes such as `32px 32px`
+- `background-position` keywords such as `center center`, `left top`, `right bottom`
+- `background-repeat: no-repeat`, `repeat`, `repeat-x`, `repeat-y`
 - `text-align`
+- `text-transform: uppercase`, `lowercase`, `capitalize`
 - `vertical-align: top`, `vertical-align: middle`, `vertical-align: bottom` for table cells
 - `margin-top`
 - `margin-bottom`
@@ -288,6 +294,8 @@ The CSS support is intentionally pragmatic:
 - `colgroup` / `col style="width: ..."` for table column widths
 - `width`, `height` for images and tables
 - `height`, `min-height` for table rows and cells
+- `border-radius` for text boxes and table cells
+- simplified `box-shadow` for text boxes and table cells
 - `object-fit: contain`, `object-fit: cover`, `object-fit: fill` for images in table cells
 - `object-position` keywords such as `left top`, `center center`, `right bottom`
 - `opacity` for images
@@ -432,6 +440,27 @@ td.custom-border {
 }
 ```
 
+Cells and document boxes can use lightweight visual styling:
+
+```css
+.card {
+  padding: 12px 16px;
+  border-radius: 8px;
+  background-color: #ffffff;
+  background-image: url("./pattern.svg");
+  background-size: 48px 48px;
+  background-repeat: repeat;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.22);
+  text-transform: capitalize;
+}
+
+td.status {
+  border-radius: 6px;
+  background-color: #dcfce7;
+  text-transform: uppercase;
+}
+```
+
 For merged table cells, the renderer groups rows connected by `rowspan` and keeps that group on one page whenever it fits on a fresh page. A section row immediately before a rowspan group, such as `<tr><td colspan="5">Section</td></tr>`, is kept with that group too. If the merged group is taller than a fresh page, Html2PdfSmith renders it sequentially and emits a warning instead of silently hiding the edge case.
 
 Wide tables can be split horizontally without using a browser:
@@ -572,6 +601,7 @@ bun run example:wide-table
 bun run example:alignment
 bun run example:transform
 bun run example:layout
+bun run example:visual-css
 bun run example:document
 bun run bench -- 10 100 --watermark
 ```
