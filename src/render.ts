@@ -8,7 +8,7 @@ import {
   degrees,
   rgb,
 } from "pdf-lib";
-import { discoverFontPaths, embedImage, loadFontBytes } from "./assets";
+import { discoverFontPaths, embedImage, loadFontBytes, resolveFontPaths } from "./assets";
 import { parsePrintableHtml } from "./html";
 import { protectPdfWithQpdf } from "./protect";
 import type {
@@ -107,9 +107,9 @@ function computeColumnWidths(columns: number, contentWidth: number): number[] {
 
 async function embedFonts(pdfDoc: PDFDocument, options: RenderHtmlToPdfOptions, warnings: WarningSink): Promise<EmbeddedFonts> {
   pdfDoc.registerFontkit(fontkit);
-  const discovered = options.font?.autoDiscover ? discoverFontPaths() : {};
-  const regularInput = options.font?.regularBytes ?? options.font?.regularPath ?? discovered.regularPath;
-  const boldInput = options.font?.boldBytes ?? options.font?.boldPath ?? discovered.boldPath ?? regularInput;
+  const resolved = await resolveFontPaths(options.font, warnings);
+  const regularInput = options.font?.regularBytes ?? resolved.regularPath;
+  const boldInput = options.font?.boldBytes ?? resolved.boldPath ?? regularInput;
 
   try {
     const regularBytes = await loadFontBytes(regularInput);

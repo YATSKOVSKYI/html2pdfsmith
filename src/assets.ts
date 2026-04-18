@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { Buffer } from "node:buffer";
 import type { PDFDocument } from "pdf-lib";
 import type { WarningSink } from "./warnings";
+import type { PdfFontOptions } from "./types";
+import { resolveGoogleFont } from "./google-fonts";
 
 export interface LoadedImage {
   bytes: Uint8Array;
@@ -119,4 +121,43 @@ export async function loadFontBytes(pathOrBytes: string | Uint8Array | undefined
   if (!pathOrBytes) return undefined;
   if (typeof pathOrBytes !== "string") return pathOrBytes;
   return new Uint8Array(await readFile(pathOrBytes));
+}
+
+/**
+ * Resolve the font file paths from all possible sources, in priority order:
+ * 1. Explicit `regularPath`/`boldPath` (user-provided)
+ * 2. Google Fonts `googleFont` (downloaded once, cached to disk)
+ * 3. Auto-discover system fonts (`autoDiscover: true`)
+ * 4. Fallback (returns empty → renderer uses Helvetica)
+ *
+ * Google Fonts paths are cached to disk, so after the first download this
+ * function is just two `existsSync()` calls — zero network, zero extra RAM.
+ */
+export async function resolveFontPaths(
+  fontOptions: PdfFontOptions | undefined,
+  warnings: WarningSink,
+): Promise<{ regularPath?: string; boldPath?: string }> {
+  // 1. Explicit paths take priority
+  if (fontOptions?.regularPath || fontOptions?.regularBytes) {
+    const result: { regularPath?: string; boldPath?: string } = {};
+    if (fontOptions.regularPath) result.regularPath = fontOptions.regularPath;
+    const bp = fontOptions.boldPath ?? fontOptions.regularPath;
+    if (bp) result.boldPath = bp;
+    return result;
+  }
+
+  // 2. Google Fonts — disk-cached TTF files
+  if (fontOptions?.googleFont) {
+    const result = await resolveGoogleFont(fontOptions.googleFont, warnings);
+    if (result) return result;
+    // Falls through to auto-discover or fallback if download failed
+  }
+
+  // 3. Auto-discover system fonts
+  if (fontOptions?.autoDiscover) {
+    return discoverFontPaths();
+  }
+
+  // 4. No fonts configured
+  return {};
 }

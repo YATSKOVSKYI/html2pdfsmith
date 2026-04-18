@@ -7,6 +7,16 @@ export interface PdfFontOptions {
   regularBytes?: Uint8Array;
   boldBytes?: Uint8Array;
   /**
+   * Google Fonts family name, e.g. "Inter", "Roboto", "Noto Sans".
+   * On first use the regular (400) and bold (700) TTF files are downloaded
+   * and cached to disk (`~/.cache/html2pdfsmith/fonts/`).
+   * Subsequent renders read from disk — zero extra RAM.
+   *
+   * Takes priority over `autoDiscover` but is overridden by explicit
+   * `regularPath`/`boldPath`/`regularBytes`/`boldBytes`.
+   */
+  googleFont?: string;
+  /**
    * When true, the renderer may auto-discover large system fonts for CJK/Cyrillic coverage.
    * Keep false for lowest memory; pass explicit small/subset fonts in production.
    */

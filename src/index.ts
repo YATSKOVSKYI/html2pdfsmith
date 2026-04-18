@@ -28,3 +28,9 @@ export {
   calculatePaddingScale,
   determineOrientation,
 } from "./units";
+export {
+  resolveGoogleFont,
+  isGoogleFontCached,
+  getGoogleFontCacheDir,
+} from "./google-fonts";
+export { resolveFontPaths } from "./assets";

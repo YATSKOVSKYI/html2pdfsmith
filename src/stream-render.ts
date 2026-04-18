@@ -2,7 +2,7 @@ import PDFDocument from "pdfkit";
 import SVGtoPDF from "svg-to-pdfkit";
 import { Buffer } from "node:buffer";
 import { existsSync } from "node:fs";
-import { discoverFontPaths, loadImage } from "./assets";
+import { discoverFontPaths, loadImage, resolveFontPaths } from "./assets";
 import { parseBorderStyle, parseBoxSpacing, parseCssColor, parseLengthPx, type BoxSpacing, type BorderStyle, type StyleMap } from "./css";
 import { parsePrintableHtml } from "./html";
 import type {
@@ -193,10 +193,10 @@ function chunksToBuffer(doc: PdfKitDocument): Promise<Buffer> {
   });
 }
 
-function registerFonts(doc: PdfKitDocument, options: RenderHtmlToPdfOptions, warnings: WarningSink): { regular: string; bold: string } {
-  const discovered = options.font?.autoDiscover ? discoverFontPaths() : {};
-  const regularPath = options.font?.regularPath ?? discovered.regularPath;
-  const boldPath = options.font?.boldPath ?? discovered.boldPath ?? regularPath;
+async function registerFonts(doc: PdfKitDocument, options: RenderHtmlToPdfOptions, warnings: WarningSink): Promise<{ regular: string; bold: string }> {
+  const resolved = await resolveFontPaths(options.font, warnings);
+  const regularPath = resolved.regularPath;
+  const boldPath = resolved.boldPath ?? regularPath;
 
   if (regularPath && existsSync(regularPath)) {
     try {
@@ -666,7 +666,7 @@ async function createStreamContext(options: RenderHtmlToPdfOptions, parsed: Pars
     // eslint-disable-next-line @typescript-eslint/no-use-before-define
     ctxRef.pages += 1;
   });
-  const fonts = registerFonts(doc, options, warnings);
+  const fonts = await registerFonts(doc, options, warnings);
   const pageWidth = doc.page.width;
   const pageHeight = doc.page.height;
   const contentWidth = pageWidth - margin * 2;

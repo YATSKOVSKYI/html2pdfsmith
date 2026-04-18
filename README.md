@@ -74,6 +74,7 @@ Most HTML-to-PDF tools spin up a full **Chromium** instance — eating **300+ MB
 <td>
 
 ### 🔒 Security & Fonts
+- **Google Fonts** — `font: { googleFont: "Inter" }`
 - Optional `qpdf` owner-password encryption
 - Custom font paths for Latin, Cyrillic, CJK, Arabic
 - Memory-conscious: no auto-loaded system fonts
@@ -122,6 +123,18 @@ const pdf = await renderHtmlToPdf({ html });
 await Bun.write("report.pdf", pdf);
 ```
 
+### With Google Fonts (Recommended)
+
+```ts
+import { renderHtmlToPdf } from "html2pdfsmith";
+
+const pdf = await renderHtmlToPdf({
+  html,
+  font: { googleFont: "Inter" }, // downloaded once, cached to disk
+});
+await Bun.write("report.pdf", pdf);
+```
+
 ### Full-Featured Example
 
 ```ts
@@ -138,10 +151,7 @@ const result = await renderHtmlToPdfDetailed({
   watermarkScale: 30,
   watermarkOpacity: 12,
   userLogoUrl: "https://example.com/logo.png",
-  font: {
-    regularPath: "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-    boldPath: "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
-  },
+  font: { googleFont: "Roboto" },
 });
 
 console.log(`${result.pages} pages, ${result.orientation} orientation`);
@@ -190,6 +200,7 @@ interface RenderHtmlToPdfResult {
 | `pageHeader` | `object` | — | Repeated header: `{ text, align, fontSize, color }` |
 | `pageFooter` | `object` | — | Repeated footer: `{ text, align, fontSize, color }` |
 | `pageNumbers` | `boolean \| object` | — | Page numbers: `{ format: "Page {page}", align }` |
+| `font.googleFont` | `string` | — | Google Fonts family name (e.g. `"Inter"`, `"Roboto"`). Downloaded once, cached to disk |
 | `font.regularPath` | `string` | — | Path to regular `.ttf`/`.ttc` font |
 | `font.boldPath` | `string` | — | Path to bold `.ttf`/`.ttc` font |
 | `font.autoDiscover` | `boolean` | `false` | Auto-discover system fonts (increases memory) |
@@ -258,25 +269,62 @@ colspan • rowspan • width • height (images)
 
 The default renderer uses built-in PDF fonts for Latin text. For extended character sets:
 
+### Google Fonts (Recommended)
+
+The simplest way to use professional fonts — just pass the family name:
+
 ```ts
-// Explicit fonts — recommended for production
-const result = await renderHtmlToPdf({
+const pdf = await renderHtmlToPdf({
+  html,
+  font: { googleFont: "Inter" },
+});
+```
+
+**How it works:**
+- First render → downloads regular (400) + bold (700) `.ttf` files from the Google Fonts API
+- Saves to disk cache: `~/.cache/html2pdfsmith/fonts/` (Linux) or `%LOCALAPPDATA%\html2pdfsmith\fonts\` (Windows)
+- Subsequent renders → reads from disk cache instantly — **zero network, zero extra RAM**
+
+Popular choices: `Inter`, `Roboto`, `Noto Sans`, `Open Sans`, `Lato`, `Montserrat`, `Source Sans 3`
+
+```ts
+// Check if a font is already cached (no network call)
+import { isGoogleFontCached, getGoogleFontCacheDir } from "html2pdfsmith";
+
+console.log(isGoogleFontCached("Inter")); // true after first use
+console.log(getGoogleFontCacheDir());     // ~/.cache/html2pdfsmith/fonts/
+```
+
+### Explicit Font Paths
+
+```ts
+const pdf = await renderHtmlToPdf({
   html,
   font: {
     regularPath: "/path/to/NotoSans-Regular.ttf",
     boldPath: "/path/to/NotoSans-Bold.ttf",
   },
 });
+```
 
-// Auto-discover system fonts — convenient but heavier
-const result = await renderHtmlToPdf({
+### Auto-Discover System Fonts
+
+```ts
+const pdf = await renderHtmlToPdf({
   html,
-  font: { autoDiscover: true },
+  font: { autoDiscover: true }, // convenient but heavier on memory
 });
 ```
 
+### Priority Order
+
+1. `regularPath` / `boldPath` / `regularBytes` / `boldBytes` (explicit)
+2. `googleFont` (disk-cached TTF)
+3. `autoDiscover` (system fonts)
+4. Built-in Helvetica (fallback)
+
 > [!TIP]
-> For production memory targets under **100 MB**, use small subset fonts instead of full CJK variable fonts. A full Chinese font can push RSS well above 100 MB.
+> For production memory targets under **100 MB**, use `googleFont` or small subset fonts instead of full CJK variable fonts. A full Chinese font can push RSS well above 100 MB.
 
 ---
 
@@ -309,7 +357,8 @@ html2pdfsmith/
 │   ├── css.ts            # CSS property extraction
 │   ├── text.ts           # Text measurement utilities
 │   ├── units.ts          # Page/font scaling calculations
-│   ├── assets.ts         # Image & watermark loading
+│   ├── assets.ts         # Image, watermark & font resolution
+│   ├── google-fonts.ts   # Google Fonts downloader & disk cache
 │   ├── protect.ts        # qpdf integration
 │   ├── compat.ts         # Compatibility wrappers
 │   └── warnings.ts       # Warning system
