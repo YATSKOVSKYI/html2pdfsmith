@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="48" viewBox="0 0 180 48">
+  <rect x="1" y="1" width="178" height="46" rx="6" fill="#16213e" stroke="#2f62d9" stroke-width="2"/>
+  <path d="M18 32 L28 14 L38 32 M22 25 H34" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="50" y="31" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#ffffff">PDFSMITH</text>
+</svg>

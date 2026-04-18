@@ -3,25 +3,14 @@ import { readFile } from "node:fs/promises";
 import { Buffer } from "node:buffer";
 import type { PDFDocument } from "pdf-lib";
 import type { WarningSink } from "./warnings";
-import type { PdfFontOptions } from "./types";
-import { resolveGoogleFont } from "./google-fonts";
+import type { PdfFontOptions, PdfResourcePolicy, RenderHtmlToPdfOptions } from "./types";
+import { isGoogleFontCached, resolveGoogleFont } from "./google-fonts";
+import { loadResource } from "./resources";
 
 export interface LoadedImage {
   bytes: Uint8Array;
   kind: "png" | "jpg" | "svg" | "unsupported";
   mime: string;
-}
-
-function parseDataUrl(src: string): LoadedImage | null {
-  const match = /^data:([^;,]+)?(?:;[^,]*)?,(.*)$/is.exec(src);
-  if (!match) return null;
-  const mime = (match[1] || "application/octet-stream").toLowerCase();
-  const payload = match[2] ?? "";
-  const isBase64 = /^data:[^,]*;base64,/i.test(src);
-  const bytes = isBase64
-    ? Buffer.from(payload, "base64")
-    : Buffer.from(decodeURIComponent(payload), "utf8");
-  return { bytes, kind: imageKind(mime, bytes), mime };
 }
 
 function imageKind(mime: string, bytes: Uint8Array): LoadedImage["kind"] {
@@ -31,38 +20,27 @@ function imageKind(mime: string, bytes: Uint8Array): LoadedImage["kind"] {
   return "unsupported";
 }
 
-export async function loadImage(src: string, warnings: WarningSink): Promise<LoadedImage | null> {
+export async function loadImage(
+  src: string,
+  warnings: WarningSink,
+  options: Pick<RenderHtmlToPdfOptions, "baseUrl" | "resourcePolicy"> = {},
+): Promise<LoadedImage | null> {
   const trimmed = src.trim();
   if (!trimmed) return null;
 
-  const data = parseDataUrl(trimmed);
-  if (data) return data;
-
-  try {
-    if (/^https?:\/\//i.test(trimmed)) {
-      const response = await fetch(trimmed, { signal: AbortSignal.timeout(10_000) });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const contentType = response.headers.get("content-type") ?? "";
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      return { bytes, kind: imageKind(contentType, bytes), mime: contentType || "application/octet-stream" };
-    }
-
-    const filePath = trimmed.startsWith("file://") ? new URL(trimmed) : trimmed;
-    const bytes = new Uint8Array(await readFile(filePath));
-    return { bytes, kind: imageKind("", bytes), mime: "application/octet-stream" };
-  } catch (error) {
-    warnings.add("image_load_failed", `Failed to load image ${trimmed.slice(0, 120)}: ${String(error)}`);
-    return null;
-  }
+  const loaded = await loadResource(trimmed, "image", warnings, options);
+  if (!loaded) return null;
+  return { bytes: loaded.bytes, kind: imageKind(loaded.mime, loaded.bytes), mime: loaded.mime };
 }
 
 export async function embedImage(
   pdfDoc: PDFDocument,
   src: string | undefined,
   warnings: WarningSink,
+  options: Pick<RenderHtmlToPdfOptions, "baseUrl" | "resourcePolicy"> = {},
 ) {
   if (!src) return null;
-  const loaded = await loadImage(src, warnings);
+  const loaded = await loadImage(src, warnings, options);
   if (!loaded) return null;
   try {
     if (loaded.kind === "png") return await pdfDoc.embedPng(loaded.bytes);
@@ -137,6 +115,7 @@ export async function loadFontBytes(pathOrBytes: string | Uint8Array | undefined
 export async function resolveFontPaths(
   fontOptions: PdfFontOptions | undefined,
   warnings: WarningSink,
+  resourcePolicy?: PdfResourcePolicy,
 ): Promise<{ regularPath?: string; boldPath?: string; italicPath?: string; boldItalicPath?: string }> {
   // 1. Explicit paths take priority
   if (fontOptions?.regularPath || fontOptions?.regularBytes) {
@@ -163,8 +142,12 @@ export async function resolveFontPaths(
 
   // 3. Google Fonts - disk-cached TTF files
   if (fontOptions?.googleFont) {
-    const result = await resolveGoogleFont(fontOptions.googleFont, warnings);
-    if (result) return result;
+    if (resourcePolicy?.allowHttp === false && !isGoogleFontCached(fontOptions.googleFont)) {
+      warnings.add("google_font_http_blocked", `Google Font "${fontOptions.googleFont}" is not cached and HTTP resources are blocked.`);
+    } else {
+      const result = await resolveGoogleFont(fontOptions.googleFont, warnings);
+      if (result) return result;
+    }
     // Falls through to auto-discover or fallback if download failed
   }
 

@@ -1,0 +1,54 @@
+body {
+  font-family: "Open Sans";
+  color: #1f2933;
+}
+
+h1 {
+  font-family: "Anton";
+  font-size: 26px;
+  font-weight: 400;
+  margin: 0 0 10px;
+  text-align: center;
+  color: #16213e;
+}
+
+.logo {
+  width: 96px;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 2px solid #213547;
+}
+
+th {
+  font-family: "Roboto Condensed";
+  font-size: 12px;
+  font-weight: 700;
+  padding: 9px 8px;
+  border: 1px solid #9aa8b5;
+  background-color: #eaf0f6;
+  text-align: center;
+}
+
+td {
+  padding: 8px 9px;
+  border: 1px solid #c8d2dc;
+  font-size: 10px;
+}
+
+.right {
+  text-align: right;
+}
+
+.center {
+  text-align: center;
+}
+
+.accent {
+  color: #2f62d9;
+  font-weight: 700;
+}

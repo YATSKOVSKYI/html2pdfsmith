@@ -41,6 +41,32 @@ await assertPdf("table", `<!doctype html><html><body>
   </table>
 </body></html>`, 1);
 
+const baseUrlResources = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head>
+    <link rel="stylesheet" href="assets/base-url-table.css">
+  </head><body>
+    <img class="logo" src="assets/base-url-logo.svg">
+    <h1>Base URL Smoke</h1>
+    <table><tbody><tr><td class="accent">External CSS</td><td class="right">OK</td></tr></tbody></table>
+  </body></html>`,
+  baseUrl: fileURLToPath(new URL("./", import.meta.url)),
+  resourcePolicy: {
+    allowHttp: false,
+    allowFile: true,
+    allowData: true,
+    maxImageBytes: 500_000,
+    maxStylesheetBytes: 100_000,
+  },
+});
+const baseUrlLoaded = await PDFDocument.load(baseUrlResources.pdf);
+if (baseUrlLoaded.getPageCount() !== baseUrlResources.pages) {
+  throw new Error("base url resources: reported page count mismatch");
+}
+if (baseUrlResources.warnings.length > 1) {
+  throw new Error(`base url resources: unexpected warnings ${JSON.stringify(baseUrlResources.warnings)}`);
+}
+console.log({ name: "base-url-resources", pages: baseUrlResources.pages, bytes: baseUrlResources.pdf.byteLength, warnings: baseUrlResources.warnings.length });
+
 await assertPdf("document-blocks", `<!doctype html><html><body>
   <style>
     .quote { background-color: #f6f8fa; border-color: #94a3b8; }

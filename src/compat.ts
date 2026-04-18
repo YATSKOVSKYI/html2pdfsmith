@@ -4,6 +4,9 @@ import type { RenderHtmlToPdfOptions, RenderHtmlToPdfResult } from "./types";
 
 export interface ConvertHtmlToPdfLiteOptions {
   htmlContent: string;
+  baseUrl?: string;
+  stylesheets?: RenderHtmlToPdfOptions["stylesheets"];
+  resourcePolicy?: RenderHtmlToPdfOptions["resourcePolicy"];
   recordId?: string;
   repeatHeaders?: boolean;
   hideHeader?: boolean;
@@ -27,6 +30,9 @@ export async function convertHtmlToPdfDetailed(
     html: options.htmlContent,
   };
 
+  if (options.baseUrl !== undefined) renderOptions.baseUrl = options.baseUrl;
+  if (options.stylesheets !== undefined) renderOptions.stylesheets = options.stylesheets;
+  if (options.resourcePolicy !== undefined) renderOptions.resourcePolicy = options.resourcePolicy;
   if (options.recordId !== undefined) renderOptions.recordId = options.recordId;
   if (options.repeatHeaders !== undefined) renderOptions.repeatHeaders = options.repeatHeaders;
   if (options.hideHeader !== undefined) renderOptions.hideHeader = options.hideHeader;

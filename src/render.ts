@@ -10,6 +10,7 @@ import {
 } from "pdf-lib";
 import { discoverFontPaths, embedImage, loadFontBytes, resolveFontPaths } from "./assets";
 import { parsePrintableHtml } from "./html";
+import { prepareHtmlForRender } from "./resources";
 import { protectPdfWithQpdf } from "./protect";
 import type {
   PageOrientation,
@@ -107,7 +108,7 @@ function computeColumnWidths(columns: number, contentWidth: number): number[] {
 
 async function embedFonts(pdfDoc: PDFDocument, options: RenderHtmlToPdfOptions, warnings: WarningSink): Promise<EmbeddedFonts> {
   pdfDoc.registerFontkit(fontkit);
-  const resolved = await resolveFontPaths(options.font, warnings);
+  const resolved = await resolveFontPaths(options.font, warnings, options.resourcePolicy);
   const regularInput = options.font?.regularBytes ?? resolved.regularPath;
   const boldInput = options.font?.boldBytes ?? resolved.boldPath ?? regularInput;
 
@@ -145,7 +146,7 @@ async function getImage(ctx: RenderContext, src: string | undefined): Promise<PD
   if (!src) return null;
   let promise = ctx.imageCache.get(src);
   if (!promise) {
-    promise = embedImage(ctx.pdfDoc, src, ctx.warnings);
+    promise = embedImage(ctx.pdfDoc, src, ctx.warnings, ctx.options);
     ctx.imageCache.set(src, promise);
   }
   return promise;
@@ -486,7 +487,8 @@ export async function renderHtmlToPdfDetailed(
   options: RenderHtmlToPdfOptions,
 ): Promise<RenderHtmlToPdfResult> {
   const warnings = new WarningSink(options.onWarning);
-  const parsed = parsePrintableHtml(options.html);
+  const html = await prepareHtmlForRender(options, warnings);
+  const parsed = parsePrintableHtml(html);
   if (!parsed.primaryTable) {
     throw new Error("Legacy pdf-lib backend only supports documents with a table. Use the default streaming renderer for general printable HTML.");
   }

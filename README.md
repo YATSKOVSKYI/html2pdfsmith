@@ -92,6 +92,9 @@ import { renderHtmlToPdfDetailed } from "html2pdfsmith";
 
 const result = await renderHtmlToPdfDetailed({
   html,
+  baseUrl: "./public",
+  stylesheets: ["./pdf.css"],
+  resourcePolicy: { allowHttp: false, allowFile: true },
   repeatHeaders: true,
   page: { size: "A4", orientation: "landscape", marginMm: 4 },
   pageHeader: { text: "Quarterly Report", align: "right" },
@@ -136,6 +139,9 @@ interface RenderHtmlToPdfResult {
 | Option | Type | Description |
 |---|---|---|
 | `html` | `string` | HTML document string to render |
+| `baseUrl` | `string` | Base URL or directory for relative assets such as CSS, images, SVGs, and fonts |
+| `stylesheets` | `(string \| { href, content })[]` | Extra CSS files, URLs, or inline stylesheet content |
+| `resourcePolicy` | `object` | Resource loading guardrails: HTTP/file/data access, timeout, max image/CSS bytes |
 | `repeatHeaders` | `boolean` | Repeat table headers on page breaks |
 | `page.size` | `"A4" \| "LETTER"` | PDF page size |
 | `page.orientation` | `"portrait" \| "landscape" \| "auto"` | Page orientation |
@@ -169,6 +175,41 @@ interface RenderHtmlToPdfResult {
 | `onWarning` | `(warning) => void` | Receive non-fatal render warnings |
 
 `{total}` page counts are intentionally not resolved by the default streaming renderer. Use `{page}` for low-memory page numbers. Total page counts require buffering pages or a second pass.
+
+### Resource Loading
+
+Use `baseUrl` when the HTML contains relative resources:
+
+```ts
+const result = await renderHtmlToPdfDetailed({
+  html: `
+    <link rel="stylesheet" href="assets/report.css">
+    <img src="assets/logo.svg">
+  `,
+  baseUrl: "/srv/app/public",
+  resourcePolicy: {
+    allowHttp: false,
+    allowFile: true,
+    allowData: true,
+    timeoutMs: 8000,
+    maxImageBytes: 5_000_000,
+    maxStylesheetBytes: 500_000,
+  },
+});
+```
+
+You can also pass stylesheets explicitly:
+
+```ts
+await renderHtmlToPdfDetailed({
+  html,
+  baseUrl: "./public",
+  stylesheets: [
+    "./pdf.css",
+    { content: "table { border-collapse: collapse }" },
+  ],
+});
+```
 
 ## Supported HTML
 
@@ -332,6 +373,8 @@ bun run example
 bun run example:css-table
 bun run example:fonts
 bun run example:bundled-fonts
+bun run example:table-showcase
+bun run example:resources
 bun run example:document
 bun run bench -- 10 100 --watermark
 ```

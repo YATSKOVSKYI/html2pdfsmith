@@ -2,6 +2,22 @@ export type PageOrientation = "portrait" | "landscape";
 export type WatermarkPattern = "auto" | "minimal" | "diagonal" | "triangle" | "corners" | "honeycomb" | "none";
 export type WatermarkLayer = "background" | "foreground" | "both";
 
+export interface PdfStylesheetInput {
+  href?: string;
+  content?: string;
+}
+
+export type PdfStylesheet = string | PdfStylesheetInput;
+
+export interface PdfResourcePolicy {
+  allowHttp?: boolean;
+  allowFile?: boolean;
+  allowData?: boolean;
+  timeoutMs?: number;
+  maxImageBytes?: number;
+  maxStylesheetBytes?: number;
+}
+
 export interface PdfBundledFontFace {
   family: string;
   regularPath: string;
@@ -83,6 +99,9 @@ export interface RenderWarning {
 
 export interface RenderHtmlToPdfOptions {
   html: string;
+  baseUrl?: string;
+  stylesheets?: PdfStylesheet[];
+  resourcePolicy?: PdfResourcePolicy;
   recordId?: string;
   page?: PdfPageOptions;
   font?: PdfFontOptions;

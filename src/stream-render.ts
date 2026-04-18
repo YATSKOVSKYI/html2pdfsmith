@@ -6,6 +6,7 @@ import { discoverFontPaths, loadImage, resolveFontPaths } from "./assets";
 import { parseBorderStyle, parseBoxSpacing, parseCssColor, parseLengthPx, type BoxSpacing, type BorderStyle, type StyleMap } from "./css";
 import { resolveGoogleFont } from "./google-fonts";
 import { parsePrintableHtml } from "./html";
+import { prepareHtmlForRender } from "./resources";
 import type {
   PageOrientation,
   PdfBundledFontFace,
@@ -292,7 +293,7 @@ function registerFontPair(doc: PdfKitDocument, family: string, paths: { regularP
 }
 
 async function registerFonts(doc: PdfKitDocument, options: RenderHtmlToPdfOptions, warnings: WarningSink): Promise<RegisteredFontPair & { families: Map<string, RegisteredFontPair> }> {
-  const resolved = await resolveFontPaths(options.font, warnings);
+  const resolved = await resolveFontPaths(options.font, warnings, options.resourcePolicy);
   const regularPath = resolved.regularPath;
   const boldPath = resolved.boldPath ?? regularPath;
   const families = new Map<string, RegisteredFontPair>();
@@ -330,9 +331,9 @@ async function registerFonts(doc: PdfKitDocument, options: RenderHtmlToPdfOption
   return { regular: "Helvetica", bold: "Helvetica-Bold", italic: "Helvetica-Oblique", boldItalic: "Helvetica-BoldOblique", families };
 }
 
-async function loadPdfKitAsset(src: string | null | undefined, warnings: WarningSink): Promise<LoadedPdfKitAsset | null> {
+async function loadPdfKitAsset(src: string | null | undefined, warnings: WarningSink, options: Pick<RenderHtmlToPdfOptions, "baseUrl" | "resourcePolicy">): Promise<LoadedPdfKitAsset | null> {
   if (!src) return null;
-  const loaded = await loadImage(src, warnings);
+  const loaded = await loadImage(src, warnings, options);
   if (!loaded) return null;
   if (loaded.kind !== "png" && loaded.kind !== "jpg" && loaded.kind !== "svg") return null;
   const bytes = Buffer.from(loaded.bytes);
@@ -344,7 +345,7 @@ async function loadPdfKitAsset(src: string | null | undefined, warnings: Warning
 function getAsset(ctx: StreamContext, src: string): Promise<LoadedPdfKitAsset | null> {
   let asset = ctx.assetCache.get(src);
   if (!asset) {
-    asset = loadPdfKitAsset(src, ctx.warnings);
+    asset = loadPdfKitAsset(src, ctx.warnings, ctx.options);
     ctx.assetCache.set(src, asset);
   }
   return asset;
@@ -583,9 +584,31 @@ function jpgDimensions(bytes: Buffer): ImageDimensions | null {
   return null;
 }
 
+function svgDimensions(svgText: string | undefined): ImageDimensions | null {
+  if (!svgText) return null;
+  const svgTag = /<svg\b([^>]*)>/i.exec(svgText);
+  if (!svgTag?.[1]) return null;
+  const attrs = svgTag[1];
+  const widthRaw = /\bwidth\s*=\s*["']([^"']+)["']/i.exec(attrs)?.[1];
+  const heightRaw = /\bheight\s*=\s*["']([^"']+)["']/i.exec(attrs)?.[1];
+  const viewBoxRaw = /\bviewBox\s*=\s*["']([^"']+)["']/i.exec(attrs)?.[1];
+  const width = parseLengthPx(widthRaw);
+  const height = parseLengthPx(heightRaw);
+  const viewBox = viewBoxRaw?.trim().split(/[\s,]+/).map((part) => Number.parseFloat(part));
+  const viewBoxWidth = viewBox && viewBox.length >= 4 ? viewBox[2] : undefined;
+  const viewBoxHeight = viewBox && viewBox.length >= 4 ? viewBox[3] : undefined;
+
+  if (width && height) return { width, height };
+  if (width && viewBoxWidth && viewBoxHeight) return { width, height: width * viewBoxHeight / viewBoxWidth };
+  if (height && viewBoxWidth && viewBoxHeight) return { width: height * viewBoxWidth / viewBoxHeight, height };
+  if (viewBoxWidth && viewBoxHeight) return { width: viewBoxWidth, height: viewBoxHeight };
+  return null;
+}
+
 function imageDimensions(asset: LoadedPdfKitAsset): ImageDimensions | null {
   if (asset.kind === "png") return pngDimensions(asset.bytes);
   if (asset.kind === "jpg") return jpgDimensions(asset.bytes);
+  if (asset.kind === "svg") return svgDimensions(asset.svgText);
   return null;
 }
 
@@ -1003,9 +1026,9 @@ async function createStreamContext(options: RenderHtmlToPdfOptions, parsed: Pars
     italicFontName: fonts.italic,
     boldItalicFontName: fonts.boldItalic,
     fontFamilies: fonts.families,
-    watermarkAsset: await loadPdfKitAsset(options.watermarkUrl, warnings),
-    logoAsset: await loadPdfKitAsset(options.userLogoUrl, warnings),
-    qrAsset: await loadPdfKitAsset(parsed.contactQrSrc, warnings),
+    watermarkAsset: await loadPdfKitAsset(options.watermarkUrl, warnings, options),
+    logoAsset: await loadPdfKitAsset(options.userLogoUrl, warnings, options),
+    qrAsset: await loadPdfKitAsset(parsed.contactQrSrc, warnings, options),
     assetCache: new Map(),
     currentTableStyle: tableStyle({}),
   };
@@ -1017,7 +1040,8 @@ export async function renderHtmlToPdfDetailed(
   options: RenderHtmlToPdfOptions,
 ): Promise<RenderHtmlToPdfResult> {
   const warnings = new WarningSink(options.onWarning);
-  const parsed = parsePrintableHtml(options.html);
+  const html = await prepareHtmlForRender(options, warnings);
+  const parsed = parsePrintableHtml(html);
   const { ctx, done } = await createStreamContext(options, parsed, warnings);
 
   drawWatermark(ctx, "background");
