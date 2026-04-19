@@ -194,6 +194,18 @@ export interface ParsedInlineSegment {
   inlineBox?: boolean;
 }
 
+export type ParsedChartType = "bar" | "line" | "donut";
+
+export interface ParsedChart {
+  chartType: ParsedChartType;
+  title?: string;
+  subtitle?: string;
+  labels: string[];
+  values: number[];
+  unit?: string;
+  colors?: string[];
+}
+
 export type ParsedBlock =
   | { type: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
   | { type: "paragraph"; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
@@ -201,6 +213,7 @@ export type ParsedBlock =
   | { type: "blockquote"; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
   | { type: "list-item"; text: string; inlines: ParsedInlineSegment[]; ordered: boolean; index: number; style: Record<string, string> }
   | { type: "image"; src: string; alt: string; style: Record<string, string> }
+  | { type: "chart"; chart: ParsedChart; style: Record<string, string> }
   | { type: "hr"; style: Record<string, string> }
   | { type: "page-break"; style: Record<string, string> }
   | { type: "table"; table: ParsedTable; style: Record<string, string> };

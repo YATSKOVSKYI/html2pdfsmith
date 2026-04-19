@@ -669,6 +669,19 @@ Run it locally:
 bun run bench -- 10 100 --watermark
 ```
 
+For a heavier visual benchmark, generate a styled 15-page HTML table document with SVGs, rich cells, rounded badges, sub/sup text, baseline shifts, repeated page chrome, a watermark, and an embedded final metrics page:
+
+```bash
+bun run bench:internal
+```
+
+The internal benchmark reports memory in two ways:
+
+- `peakRssMb`: total RSS of the current Bun process at peak.
+- `deltaPeakRssMb`: additional RSS used during this render after the process is already warm.
+
+This matters in production because Html2PdfSmith does not launch a separate Chromium process. Browser-based renderers must count both the server process and the browser process.
+
 ## Development
 
 ```bash
@@ -695,6 +708,7 @@ bun run example:comparison-showcase
 bun run example:html-file
 bun run example:document
 bun run bench -- 10 100 --watermark
+bun run bench:internal
 ```
 
 ## License

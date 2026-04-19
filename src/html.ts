@@ -2,7 +2,7 @@ import { parseDocument } from "htmlparser2";
 import type { AnyNode, Element } from "domhandler";
 import { DomUtils } from "htmlparser2";
 import { parseCssFontFaces, parseCssPageRule, parseCssRules, resolveElementStyle, type CssRule } from "./css";
-import type { ParsedBlock, ParsedCell, ParsedCellBlock, ParsedDocument, ParsedFontFace, ParsedInlineSegment, ParsedRow, ParsedTable } from "./types";
+import type { ParsedBlock, ParsedCell, ParsedCellBlock, ParsedChart, ParsedChartType, ParsedDocument, ParsedFontFace, ParsedInlineSegment, ParsedRow, ParsedTable } from "./types";
 
 function isElement(node: AnyNode | null | undefined): node is Element {
   return !!node && (node.type === "tag" || node.type === "style" || node.type === "script");
@@ -330,6 +330,44 @@ function parseIntAttr(el: Element, name: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function splitList(value: string): string[] {
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) return parsed.map((item) => String(item).trim()).filter(Boolean);
+    } catch {
+      // Fall back to delimiter parsing below.
+    }
+  }
+  return trimmed.split(/[|,;]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function parseChart(el: Element): ParsedChart | undefined {
+  const rawType = (attr(el, "type") || attr(el, "data-chart")).trim().toLowerCase();
+  const chartType: ParsedChartType = rawType === "line" || rawType === "donut" ? rawType : "bar";
+  const values = splitList(attr(el, "data-values") || attr(el, "values"))
+    .map((value) => Number.parseFloat(value.replace(/\s+/g, "")))
+    .filter((value) => Number.isFinite(value));
+  if (values.length === 0) return undefined;
+  const labels = splitList(attr(el, "data-labels") || attr(el, "labels"));
+  const colors = splitList(attr(el, "data-colors") || attr(el, "colors"));
+  const chart: ParsedChart = {
+    chartType,
+    values,
+    labels: labels.length > 0 ? labels : values.map((_, index) => String(index + 1)),
+  };
+  const title = attr(el, "title").trim();
+  const subtitle = attr(el, "subtitle").trim();
+  const unit = attr(el, "unit").trim();
+  if (title) chart.title = title;
+  if (subtitle) chart.subtitle = subtitle;
+  if (unit) chart.unit = unit;
+  if (colors.length > 0) chart.colors = colors;
+  return chart;
+}
+
 function parseCell(el: Element, rules: CssRule[]): ParsedCell {
   const cls = className(el);
   const style = attr(el, "style");
@@ -531,6 +569,12 @@ function parseFlowBlocks(nodes: AnyNode[], rules: CssRule[], blocks: ParsedBlock
 
     if (name === "table") {
       blocks.push({ type: "table", table: parseTable(node, rules), style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
+      return;
+    }
+    if (name === "chart" || attr(node, "data-chart")) {
+      const chart = parseChart(node);
+      if (chart) blocks.push({ type: "chart", chart, style });
       if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
       return;
     }
