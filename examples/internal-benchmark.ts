@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { renderHtmlToPdfDetailed, type RenderWarning } from "../src/index";
+import { createChartDashboardHtml, renderHtmlToPdfDetailed, type ChartDashboardCard, type RenderWarning } from "../src/index";
 import { bundledFonts } from "../packages/fonts/src/index";
 
 interface MemorySnapshot {
@@ -290,18 +290,23 @@ function chartsHtml(metrics?: BenchmarkMetrics): string {
     : `${Math.round(derived!.pdfKb)},${Math.round(derived!.htmlKb)},${Math.round(derived!.kbPerPage * 10)},${Math.round(derived!.bytesPerCell)}`;
   const budgetValue = pending ? "0" : String(Math.round(metrics.deltaPeakRss));
   const budgetMax = Math.max(120, pending ? 140 : Math.ceil(Math.max(120, metrics.deltaPeakRss * 1.35) / 10) * 10);
-  return `<section class="charts-page">
-    <h1>Benchmark Intelligence</h1>
-    <p class="lead">Six benchmark panels summarize memory, render signal, runtime split, throughput, output density and render budget.</p>
-    <div class="benchmark-dashboard-grid">
-      <chart class="dashboard-card" type="bar" title="Memory envelope" subtitle="Warm, render delta and peak RSS" unit=" MB" data-theme="ocean" data-labels="Warm,Render,Peak" data-values="${memoryValues}"></chart>
-      <chart class="dashboard-card" type="line" title="Render signal" subtitle="RSS, PDF KB and render time / 10" data-theme="royal" data-labels="Before,After,Peak,PDF KB,ms/10" data-values="${renderValues}"></chart>
-      <chart class="dashboard-card" type="donut" title="Runtime split" subtitle="Heap, external and array buffers" unit=" MB" data-theme="emerald" data-labels="Heap,External,Buffers" data-values="${footprintValues}"></chart>
-      <chart class="dashboard-card" type="horizontal-bar" title="Throughput" subtitle="Rows/sec, cells/sec and document volume" data-theme="aurora" data-labels="Rows/sec,Cells/sec,Rows,Cells" data-values="${throughputValues}"></chart>
-      <chart class="dashboard-card" type="horizontal-bar" title="Output density" subtitle="PDF KB, HTML KB, KB/page x10 and bytes/cell" data-theme="sunset" data-labels="PDF KB,HTML KB,KB/page x10,B/cell" data-values="${densityValues}"></chart>
-      <chart class="dashboard-card" type="gauge" title="Render budget" subtitle="Extra RSS against dynamic budget" unit=" MB" data-theme="graphite" data-max="${budgetMax}" data-values="${budgetValue}" data-center="${budgetValue}"></chart>
-    </div>
-  </section>`;
+  const charts: ChartDashboardCard[] = [
+    { type: "bar", title: "Memory envelope", subtitle: "Warm, render delta and peak RSS", unit: " MB", theme: "ocean", labels: "Warm,Render,Peak", values: memoryValues },
+    { type: "line", title: "Render signal", subtitle: "RSS, PDF KB and render time / 10", theme: "royal", labels: "Before,After,Peak,PDF KB,ms/10", values: renderValues },
+    { type: "donut", title: "Runtime split", subtitle: "Heap, external and array buffers", unit: " MB", theme: "emerald", labels: "Heap,External,Buffers", values: footprintValues },
+    { type: "horizontal-bar", title: "Throughput", subtitle: "Rows/sec, cells/sec and document volume", theme: "aurora", labels: "Rows/sec,Cells/sec,Rows,Cells", values: throughputValues },
+    { type: "horizontal-bar", title: "Output density", subtitle: "PDF KB, HTML KB, KB/page x10 and bytes/cell", theme: "sunset", labels: "PDF KB,HTML KB,KB/page x10,B/cell", values: densityValues },
+    { type: "gauge", title: "Render budget", subtitle: "Extra RSS against dynamic budget", unit: " MB", theme: "graphite", max: budgetMax, values: budgetValue, center: budgetValue },
+  ];
+  return createChartDashboardHtml({
+    className: "charts-page",
+    gridClassName: "chart-dashboard-grid",
+    cardClassName: "chart-dashboard-card",
+    includeStyles: false,
+    title: "Benchmark Intelligence",
+    lead: "Six benchmark panels summarize memory, render signal, runtime split, throughput, output density and render budget.",
+    charts,
+  });
 }
 
 function efficiencyChartsHtml(metrics?: BenchmarkMetrics): string {
@@ -325,18 +330,23 @@ function efficiencyChartsHtml(metrics?: BenchmarkMetrics): string {
   const unitTrend = pending
     ? "70,62,48,36,28,18|86,72,56,46,34,24"
     : `${Math.round(derived!.msPerPage)},${Math.round(derived!.msPerRow * 10)},${Math.round(derived!.msPerCell * 100)},${Math.round(derived!.kbPerPage)},${Math.round(derived!.peakDeltaPerPage * 10)},${Math.round(derived!.outputRatio * 10)}|${Math.round(derived!.msPerPage * 1.25)},${Math.round(derived!.msPerRow * 13)},${Math.round(derived!.msPerCell * 130)},${Math.round(derived!.kbPerPage * 1.22)},${Math.round(derived!.peakDeltaPerPage * 12)},${Math.round(derived!.outputRatio * 12)}`;
-  return `<section class="efficiency-page">
-    <h1>Efficiency & Density</h1>
-    <p class="lead">Six comparable panels normalize the benchmark by page, row, cell, output size and runtime memory mix.</p>
-    <div class="efficiency-grid">
-      <chart class="efficiency-card" type="horizontal-bar" title="Per-unit cost" subtitle="ms/page, ms/row x10, KB/page, bytes/cell, MB/page x10" data-theme="emerald" data-labels="ms/page,ms/row x10,KB/page,B/cell,MB/page x10" data-values="${efficiencyValues}"></chart>
-      <chart class="efficiency-card" type="horizontal-bar" title="Throughput" subtitle="Rows/sec, cells/sec, rows, cells, PDF KB, HTML KB" data-theme="aurora" data-labels="Rows/sec,Cells/sec,Rows,Cells,PDF KB,HTML KB" data-values="${throughputValues}"></chart>
-      <chart class="efficiency-card" type="donut" title="Runtime split" subtitle="Heap, external allocations and array buffers" unit=" MB" data-theme="ocean" data-labels="Heap,External,Buffers" data-values="${runtimeMixValues}"></chart>
-      <chart class="efficiency-card" type="sparkline" title="Unit trend" subtitle="Current run versus conservative baseline" data-theme="royal" data-labels="Page,Row,Cell,KB,MB,Ratio" data-series-labels="Current,Baseline" data-series="${unitTrend}"></chart>
-      <chart class="efficiency-card" type="horizontal-bar" title="Size ratio" subtitle="PDF/HTML x10, heap share and external share" data-theme="sunset" data-labels="PDF/HTML x10,Heap %,External %" data-values="${sizeRatioValues}"></chart>
-      <chart class="efficiency-card" type="horizontal-bar" title="Page economics" subtitle="ms/page, KB/page x10, MB/page x10 and cells/page" data-theme="graphite" data-labels="ms/page,KB/page x10,MB/page x10,Cells/page" data-values="${pageEconomicsValues}"></chart>
-    </div>
-  </section>`;
+  const charts: ChartDashboardCard[] = [
+    { type: "horizontal-bar", title: "Per-unit cost", subtitle: "ms/page, ms/row x10, KB/page, bytes/cell, MB/page x10", theme: "emerald", labels: "ms/page,ms/row x10,KB/page,B/cell,MB/page x10", values: efficiencyValues },
+    { type: "horizontal-bar", title: "Throughput", subtitle: "Rows/sec, cells/sec, rows, cells, PDF KB, HTML KB", theme: "aurora", labels: "Rows/sec,Cells/sec,Rows,Cells,PDF KB,HTML KB", values: throughputValues },
+    { type: "donut", title: "Runtime split", subtitle: "Heap, external allocations and array buffers", unit: " MB", theme: "ocean", labels: "Heap,External,Buffers", values: runtimeMixValues },
+    { type: "sparkline", title: "Unit trend", subtitle: "Current run versus conservative baseline", theme: "royal", labels: "Page,Row,Cell,KB,MB,Ratio", seriesLabels: "Current,Baseline", series: unitTrend },
+    { type: "horizontal-bar", title: "Size ratio", subtitle: "PDF/HTML x10, heap share and external share", theme: "sunset", labels: "PDF/HTML x10,Heap %,External %", values: sizeRatioValues },
+    { type: "horizontal-bar", title: "Page economics", subtitle: "ms/page, KB/page x10, MB/page x10 and cells/page", theme: "graphite", labels: "ms/page,KB/page x10,MB/page x10,Cells/page", values: pageEconomicsValues },
+  ];
+  return createChartDashboardHtml({
+    className: "efficiency-page",
+    gridClassName: "chart-dashboard-grid",
+    cardClassName: "chart-dashboard-card",
+    includeStyles: false,
+    title: "Efficiency & Density",
+    lead: "Six comparable panels normalize the benchmark by page, row, cell, output size and runtime memory mix.",
+    charts,
+  });
 }
 
 function radialChartsHtml(metrics?: BenchmarkMetrics): string {
@@ -532,10 +542,8 @@ function buildBenchmarkHtml(metrics?: BenchmarkMetrics): string {
       .formula-sample { font-size: 14px; text-align: center; color: #0f172a; }
       .result-label { background-color: #f3f6fa; color: #64748b; font-family: "Roboto Condensed"; font-weight: 700; text-transform: uppercase; }
       .result-value { color: #0f172a; font-size: 11px; font-weight: 800; text-align: right; white-space: nowrap; }
-      .benchmark-dashboard-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 12px; }
-      .dashboard-card { height: 166px; margin-bottom: 0; padding: 12px 14px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 12px 28px -10px rgba(15, 23, 42, 0.18); }
-      .efficiency-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 12px; }
-      .efficiency-card { height: 166px; margin-bottom: 0; padding: 12px 14px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 12px 28px -10px rgba(15, 23, 42, 0.18); }
+      .chart-dashboard-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 12px; }
+      .chart-dashboard-card { height: 166px; margin-bottom: 0; padding: 12px 14px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 12px 28px -10px rgba(15, 23, 42, 0.18); }
       .radial-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 12px; }
       .radial-card { height: 176px; margin-bottom: 0; padding: 12px 14px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 12px 28px -10px rgba(15, 23, 42, 0.20); }
       .advanced-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 12px; }

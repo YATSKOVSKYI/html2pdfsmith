@@ -26,8 +26,16 @@ export type {
   WatermarkLayer,
   WatermarkPattern,
 } from "./types";
+export type {
+  ChartDashboardCard,
+  ChartDashboardList,
+  ChartDashboardOptions,
+  ChartDashboardSeries,
+  ChartDashboardValue,
+} from "./dashboard";
 
 export { parsePrintableHtml } from "./html";
+export { createChartDashboardHtml } from "./dashboard";
 export { convertHtmlToPdf, convertHtmlToPdfDetailed } from "./compat";
 export {
   renderHtmlToPdf,

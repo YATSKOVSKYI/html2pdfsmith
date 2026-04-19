@@ -649,6 +649,42 @@ Charts and other block content can be placed in a lightweight CSS Grid:
 }
 ```
 
+For TypeScript callers that build report HTML from data, `createChartDashboardHtml` generates a reusable chart dashboard fragment:
+
+```ts
+import { createChartDashboardHtml, renderHtmlToPdf } from "html2pdfsmith";
+
+const dashboard = createChartDashboardHtml({
+  title: "Benchmark Intelligence",
+  lead: "Memory, throughput, density and budget in one PDF-ready dashboard.",
+  columns: 3,
+  charts: [
+    {
+      type: "bar",
+      title: "Memory envelope",
+      subtitle: "Warm, render delta and peak RSS",
+      unit: " MB",
+      theme: "ocean",
+      labels: ["Warm", "Render", "Peak"],
+      values: [254, 105, 360],
+    },
+    {
+      type: "donut",
+      title: "Runtime split",
+      subtitle: "Heap, external and buffers",
+      unit: " MB",
+      theme: "emerald",
+      labels: ["Heap", "External", "Buffers"],
+      values: [36, 19, 2],
+    },
+  ],
+});
+
+const pdf = await renderHtmlToPdf({
+  html: `<!doctype html><html><body>${dashboard}</body></html>`,
+});
+```
+
 ## Additional Exports
 
 Besides the main `renderHtmlToPdf` and `renderHtmlToPdfDetailed` functions, the library exports several utilities:
@@ -661,6 +697,9 @@ import {
 
   // HTML parser — returns the structured ParsedDocument
   parsePrintableHtml,
+
+  // Dashboard HTML helper for reusable chart grids
+  createChartDashboardHtml,
 
   // Google Fonts utilities
   resolveGoogleFont,
@@ -695,6 +734,8 @@ import type {
   ParsedTable,
   ParsedRow,
   ParsedCell,
+  ChartDashboardCard,
+  ChartDashboardOptions,
 } from "html2pdfsmith";
 ```
 
