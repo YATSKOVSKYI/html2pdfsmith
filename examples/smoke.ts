@@ -1,6 +1,8 @@
 import { PDFDocument } from "pdf-lib";
 import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
 import { renderHtmlToPdfDetailed } from "../src/index";
+import { bundledFonts } from "../packages/fonts/src/index";
 
 process.env.HTML2PDFSMITH_CACHE_DIR ??= fileURLToPath(new URL("../tmp/cache", import.meta.url));
 
@@ -315,6 +317,28 @@ if (inlineBadgesLoaded.getPageCount() !== inlineBadges.pages) {
 }
 console.log({ name: "inline-badges", pages: inlineBadges.pages, bytes: inlineBadges.pdf.byteLength, warnings: inlineBadges.warnings.length });
 
+const inlineScripts = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    body { font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; }
+    td { border: 1px solid #bbb; padding: 8px; }
+    .css-super { vertical-align: super; font-size: 70%; color: #2563eb; }
+    .css-sub { vertical-align: sub; font-size: 70%; color: #c2410c; }
+    .shift-up { baseline-shift: 35%; font-size: 70%; color: #0f766e; }
+    .shift-down { baseline-shift: -20%; font-size: 70%; color: #7c2d12; }
+  </style></head><body>
+    <p>Formula: E = mc<sup>2</sup>, water: H<sub>2</sub>O, custom X<span class="css-super">n+1</span> and CO<span class="css-sub">2</span>.</p>
+    <p>Baseline shift: A<span class="shift-up">up</span> and B<span class="shift-down">down</span>.</p>
+    <table><tbody><tr><td>m<sup>3</sup>/h</td><td>Battery LiFePO<sub>4</sub></td><td>X<span style="baseline-shift: super; font-size: 70%">svg</span></td></tr></tbody></table>
+  </body></html>`,
+  hideHeader: true,
+});
+const inlineScriptsLoaded = await PDFDocument.load(inlineScripts.pdf);
+if (inlineScriptsLoaded.getPageCount() !== inlineScripts.pages) {
+  throw new Error("inline scripts: reported page count mismatch");
+}
+console.log({ name: "inline-sub-sup", pages: inlineScripts.pages, bytes: inlineScripts.pdf.byteLength, warnings: inlineScripts.warnings.length });
+
 const richCellIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60"><rect x="8" y="24" width="92" height="22" rx="8" fill="#b5978b" stroke="#334155"/><circle cx="32" cy="47" r="10" fill="#111827"/><circle cx="82" cy="47" r="10" fill="#111827"/></svg>`)}`;
 const richCell = await renderHtmlToPdfDetailed({
   html: `<!doctype html><html><head><style>
@@ -338,6 +362,26 @@ if (richCellLoaded.getPageCount() !== richCell.pages) {
   throw new Error("rich cell layout: reported page count mismatch");
 }
 console.log({ name: "rich-cell-layout", pages: richCell.pages, bytes: richCell.pdf.byteLength, warnings: richCell.warnings.length });
+
+const richHtmlFilePath = fileURLToPath(new URL("./fixtures/comparison-rich-table.html", import.meta.url));
+const richHtmlFile = await renderHtmlToPdfDetailed({
+  html: await Bun.file(richHtmlFilePath).text(),
+  baseUrl: dirname(richHtmlFilePath),
+  hideHeader: true,
+  font: {
+    bundled: bundledFonts.openSans,
+  },
+  resourcePolicy: {
+    allowData: true,
+    allowFile: true,
+    allowHttp: false,
+  },
+});
+const richHtmlFileLoaded = await PDFDocument.load(richHtmlFile.pdf);
+if (richHtmlFileLoaded.getPageCount() !== richHtmlFile.pages) {
+  throw new Error("rich html file: reported page count mismatch");
+}
+console.log({ name: "rich-html-file", pages: richHtmlFile.pages, bytes: richHtmlFile.pdf.byteLength, warnings: richHtmlFile.warnings.length });
 
 await assertPdf("document-blocks", `<!doctype html><html><body>
   <style>

@@ -40,7 +40,7 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 - portrait, landscape, and automatic orientation
 - page headers, page footers, and streaming page numbers
 - document headings, paragraphs, div/section text blocks, lists, blockquotes, pre/code blocks, links, horizontal rules
-- inline rich text: `strong`, `b`, `em`, `i`, `u`, `s`, `del`, `span style`, `a href`, `code`
+- inline rich text: `strong`, `b`, `em`, `i`, `u`, `s`, `del`, `sup`, `sub`, `span style`, `a href`, `code`
 - inline badges/chips with `display: inline-block`, padding, borders, rounded backgrounds, and text transforms
 - block boxes with margins, padding, borders, background colors, and line-height
 - tables with repeated headers, horizontal wide-table pagination, `thead`, `tbody`, `tfoot`, `colspan`, and basic `rowspan`
@@ -51,7 +51,7 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 - cross-platform image transforms: `transform`, `transform-origin`, `-webkit-transform`, `-webkit-transform-origin`, `opacity`
 - table layout controls: `colgroup`, `table-layout: fixed`, `white-space`, `text-overflow: ellipsis`
 - per-side borders: `border-top`, `border-right`, `border-bottom`, `border-left`, dashed and dotted lines
-- visual CSS: `background-image`, `background-size`, `background-position`, `background-repeat`, `border-radius`, `box-shadow`, `text-transform`
+- visual CSS: `background-image`, `background-size`, `background-position`, `background-repeat`, `border-radius`, per-corner radius, `box-shadow`, `text-transform`
 - inline visual CSS: `display: inline-block`, `padding`, `border`, `border-radius`, `background-color`
 - print CSS: `@media print` / `@media all` rules are applied, `@media screen` rules are ignored
 - content-aware `table-layout: auto` for tables without explicit `colgroup` widths
@@ -221,6 +221,23 @@ const result = await renderHtmlToPdfDetailed({
 });
 ```
 
+The renderer takes finished HTML. TypeScript is only the caller; it does not have to build the PDF structure. A file-based render can be as small as:
+
+```ts
+import { dirname } from "node:path";
+import { renderHtmlToPdfDetailed } from "html2pdfsmith";
+
+const input = "/srv/templates/comparison.html";
+const html = await Bun.file(input).text();
+const result = await renderHtmlToPdfDetailed({
+  html,
+  baseUrl: dirname(input),
+  resourcePolicy: { allowFile: true, allowData: true },
+});
+
+await Bun.write("comparison.pdf", result.pdf);
+```
+
 You can also pass stylesheets explicitly:
 
 ```ts
@@ -264,7 +281,7 @@ Html2PdfSmith supports a document-oriented HTML subset:
 - `div`, `section`, `article`, `main`, `aside`
 - `h1` through `h6`
 - `p`, `address`, `blockquote`, `pre`, `code`
-- `strong`, `b`, `em`, `i`, `u`, `s`, `del`, `span`, `a`
+- `strong`, `b`, `em`, `i`, `u`, `s`, `del`, `sup`, `sub`, `span`, `a`
 - `ul`, `ol`, `li`
 - `table`, `thead`, `tbody`, `tfoot`, `colgroup`, `col`, `tr`, `th`, `td`
 - `img`, `hr`, `br`
@@ -293,6 +310,8 @@ The CSS support is intentionally pragmatic:
 - `text-align`
 - `text-transform: uppercase`, `lowercase`, `capitalize`
 - `vertical-align: top`, `vertical-align: middle`, `vertical-align: bottom` for table cells
+- `vertical-align: super` and `vertical-align: sub` for inline text
+- `baseline-shift` for inline text, including `super`, `sub`, percentages, and lengths
 - `margin-top`
 - `margin-bottom`
 - `margin`, `margin-left`, `margin-right`
@@ -309,7 +328,7 @@ The CSS support is intentionally pragmatic:
 - `colgroup` / `col style="width: ..."` for table column widths
 - `width`, `height` for images and tables
 - `height`, `min-height` for table rows and cells
-- `border-radius` for text boxes and table cells
+- `border-radius` for text boxes and table cells, including four-value shorthand and `border-*-radius`
 - `padding`, `border`, `border-radius`, and `background-color` for inline `span` badges/chips
 - simplified `box-shadow` for text boxes and table cells
 - `object-fit: contain`, `object-fit: cover`, `object-fit: fill` for images in table cells
@@ -673,6 +692,7 @@ bun run example:visual-css
 bun run example:production-layout
 bun run example:inline-badges
 bun run example:comparison-showcase
+bun run example:html-file
 bun run example:document
 bun run bench -- 10 100 --watermark
 ```

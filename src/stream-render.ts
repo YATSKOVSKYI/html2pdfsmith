@@ -127,6 +127,15 @@ interface BoxShadow {
   opacity: number;
 }
 
+interface BoxRadius {
+  topLeft: number;
+  topRight: number;
+  bottomRight: number;
+  bottomLeft: number;
+}
+
+type BoxRadiusInput = number | BoxRadius;
+
 interface InlineLayoutItem {
   segment: ParsedInlineSegment;
   text: string;
@@ -135,10 +144,14 @@ interface InlineLayoutItem {
   color: string;
   width: number;
   height: number;
+  visualHeight: number;
+  baselineShift: number;
+  visualTop: number;
+  visualBottom: number;
   textWidth: number;
   padding: BoxSpacing;
   border: BorderStyle;
-  radius: number;
+  radius: BoxRadius;
   background?: string;
   link?: string;
   decoration: string;
@@ -340,32 +353,120 @@ function cellPadding(ctx: StreamContext, cell: ParsedCell): BoxSpacing {
   }));
 }
 
+function cssRadiusTokenPt(value: string | undefined, base: number): number | undefined {
+  const token = value?.trim().split(/\s+/)[0];
+  return cssLengthPt(token, base);
+}
+
+function boxRadiusPt(styles: StyleMap, width: number, height: number): BoxRadius {
+  const base = Math.min(width, height);
+  const raw = (styles["border-radius"] ?? "").split("/")[0]?.trim() ?? "";
+  const tokens = raw ? raw.split(/\s+/).filter(Boolean).slice(0, 4) : [];
+  const values = tokens.map((token) => cssLengthPt(token, base) ?? 0);
+  let radius: BoxRadius = { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 };
+  if (values.length === 1) {
+    radius = { topLeft: values[0]!, topRight: values[0]!, bottomRight: values[0]!, bottomLeft: values[0]! };
+  } else if (values.length === 2) {
+    radius = { topLeft: values[0]!, topRight: values[1]!, bottomRight: values[0]!, bottomLeft: values[1]! };
+  } else if (values.length === 3) {
+    radius = { topLeft: values[0]!, topRight: values[1]!, bottomRight: values[2]!, bottomLeft: values[1]! };
+  } else if (values.length >= 4) {
+    radius = { topLeft: values[0]!, topRight: values[1]!, bottomRight: values[2]!, bottomLeft: values[3]! };
+  }
+
+  radius.topLeft = cssRadiusTokenPt(styles["border-top-left-radius"], base) ?? radius.topLeft;
+  radius.topRight = cssRadiusTokenPt(styles["border-top-right-radius"], base) ?? radius.topRight;
+  radius.bottomRight = cssRadiusTokenPt(styles["border-bottom-right-radius"], base) ?? radius.bottomRight;
+  radius.bottomLeft = cssRadiusTokenPt(styles["border-bottom-left-radius"], base) ?? radius.bottomLeft;
+
+  radius = normalizeBoxRadius(radius, width, height);
+  return radius;
+}
+
 function borderRadiusPt(styles: StyleMap, width: number, height: number): number {
-  const raw = styles["border-radius"]?.trim().split(/\s+/)[0];
-  const radius = cssLengthPt(raw, Math.min(width, height)) ?? 0;
-  return clamp(radius, 0, Math.min(width, height) / 2);
+  const radius = boxRadiusPt(styles, width, height);
+  return Math.max(radius.topLeft, radius.topRight, radius.bottomRight, radius.bottomLeft);
 }
 
-function fillBox(ctx: StreamContext, x: number, y: number, width: number, height: number, color: string, radius = 0): void {
-  if (radius > 0) ctx.doc.roundedRect(x, y, width, height, radius).fill(color);
-  else ctx.doc.rect(x, y, width, height).fill(color);
+function normalizeBoxRadius(radius: BoxRadiusInput, width: number, height: number): BoxRadius {
+  const maxRadius = Math.max(0, Math.min(width, height) / 2);
+  const out = typeof radius === "number"
+    ? { topLeft: radius, topRight: radius, bottomRight: radius, bottomLeft: radius }
+    : { ...radius };
+  out.topLeft = clamp(out.topLeft, 0, maxRadius);
+  out.topRight = clamp(out.topRight, 0, maxRadius);
+  out.bottomRight = clamp(out.bottomRight, 0, maxRadius);
+  out.bottomLeft = clamp(out.bottomLeft, 0, maxRadius);
+
+  const top = out.topLeft + out.topRight;
+  const right = out.topRight + out.bottomRight;
+  const bottom = out.bottomLeft + out.bottomRight;
+  const left = out.topLeft + out.bottomLeft;
+  const scale = Math.min(
+    1,
+    top > 0 ? width / top : 1,
+    right > 0 ? height / right : 1,
+    bottom > 0 ? width / bottom : 1,
+    left > 0 ? height / left : 1,
+  );
+  if (scale < 1) {
+    out.topLeft *= scale;
+    out.topRight *= scale;
+    out.bottomRight *= scale;
+    out.bottomLeft *= scale;
+  }
+  return out;
 }
 
-function strokeBox(ctx: StreamContext, x: number, y: number, width: number, height: number, border: BorderStyle, radius = 0): void {
+function maxBoxRadius(radius: BoxRadiusInput): number {
+  if (typeof radius === "number") return radius;
+  return Math.max(radius.topLeft, radius.topRight, radius.bottomRight, radius.bottomLeft);
+}
+
+function roundedBoxPath(ctx: StreamContext, x: number, y: number, width: number, height: number, radiusInput: BoxRadiusInput): void {
+  const radius = normalizeBoxRadius(radiusInput, width, height);
+  ctx.doc
+    .moveTo(x + radius.topLeft, y)
+    .lineTo(x + width - radius.topRight, y);
+  if (radius.topRight > 0) ctx.doc.quadraticCurveTo(x + width, y, x + width, y + radius.topRight);
+  else ctx.doc.lineTo(x + width, y);
+  ctx.doc.lineTo(x + width, y + height - radius.bottomRight);
+  if (radius.bottomRight > 0) ctx.doc.quadraticCurveTo(x + width, y + height, x + width - radius.bottomRight, y + height);
+  else ctx.doc.lineTo(x + width, y + height);
+  ctx.doc.lineTo(x + radius.bottomLeft, y + height);
+  if (radius.bottomLeft > 0) ctx.doc.quadraticCurveTo(x, y + height, x, y + height - radius.bottomLeft);
+  else ctx.doc.lineTo(x, y + height);
+  ctx.doc.lineTo(x, y + radius.topLeft);
+  if (radius.topLeft > 0) ctx.doc.quadraticCurveTo(x, y, x + radius.topLeft, y);
+  else ctx.doc.lineTo(x, y);
+  ctx.doc.closePath();
+}
+
+function fillBox(ctx: StreamContext, x: number, y: number, width: number, height: number, color: string, radius: BoxRadiusInput = 0): void {
+  if (maxBoxRadius(radius) > 0) roundedBoxPath(ctx, x, y, width, height, radius);
+  else ctx.doc.rect(x, y, width, height);
+  ctx.doc.fill(color);
+}
+
+function strokeBox(ctx: StreamContext, x: number, y: number, width: number, height: number, border: BorderStyle, radius: BoxRadiusInput = 0): void {
   if (border.width <= 0 || border.style === "none") return;
   ctx.doc.save();
   ctx.doc.strokeColor(border.color ?? COLORS.border).lineWidth(border.width);
   if (border.style === "dashed") ctx.doc.dash(Math.max(2, border.width * 3), { space: Math.max(2, border.width * 2) });
   if (border.style === "dotted") ctx.doc.dash(Math.max(0.7, border.width), { space: Math.max(1.4, border.width * 2) });
-  if (radius > 0) ctx.doc.roundedRect(x, y, width, height, radius).stroke();
-  else ctx.doc.rect(x, y, width, height).stroke();
+  if (maxBoxRadius(radius) > 0) roundedBoxPath(ctx, x, y, width, height, radius);
+  else ctx.doc.rect(x, y, width, height);
+  ctx.doc.stroke();
   ctx.doc.undash();
   ctx.doc.restore();
 }
 
-function clipBox(ctx: StreamContext, x: number, y: number, width: number, height: number, radius = 0): void {
-  if (radius > 0) ctx.doc.roundedRect(x, y, Math.max(1, width), Math.max(1, height), radius).clip();
-  else ctx.doc.rect(x, y, Math.max(1, width), Math.max(1, height)).clip();
+function clipBox(ctx: StreamContext, x: number, y: number, width: number, height: number, radius: BoxRadiusInput = 0): void {
+  const safeWidth = Math.max(1, width);
+  const safeHeight = Math.max(1, height);
+  if (maxBoxRadius(radius) > 0) roundedBoxPath(ctx, x, y, safeWidth, safeHeight, radius);
+  else ctx.doc.rect(x, y, safeWidth, safeHeight);
+  ctx.doc.clip();
 }
 
 function spacingPt(styles: StyleMap, property: "padding" | "margin", fallback: BoxSpacing): BoxSpacing {
@@ -1235,8 +1336,20 @@ function inlineFont(ctx: StreamContext, segment: ParsedInlineSegment, fallbackFo
   return fallbackFont;
 }
 
+function cssFontSizePt(value: string | undefined, fallbackSize: number): number {
+  const raw = value?.trim().toLowerCase();
+  if (!raw) return fallbackSize;
+  const numeric = Number.parseFloat(raw);
+  if (Number.isFinite(numeric)) {
+    if (raw.endsWith("%")) return Math.max(1, fallbackSize * numeric / 100);
+    if (raw.endsWith("em")) return Math.max(1, fallbackSize * numeric);
+    if (raw.endsWith("rem")) return Math.max(1, 12 * numeric);
+  }
+  return cssLengthPt(raw) ?? fallbackSize;
+}
+
 function inlineSize(segment: ParsedInlineSegment, fallbackSize: number): number {
-  return cssLengthPt(segment.styles["font-size"]) ?? fallbackSize;
+  return cssFontSizePt(segment.styles["font-size"], fallbackSize);
 }
 
 function inlineColor(segment: ParsedInlineSegment, fallbackColor: string): string {
@@ -1290,8 +1403,21 @@ function hasInlineBoxStyle(segment: ParsedInlineSegment): boolean {
     || !!segment.styles["padding-bottom"];
 }
 
+function inlineBaselineShift(segment: ParsedInlineSegment, size: number): number {
+  const value = (segment.styles["baseline-shift"] ?? segment.styles["vertical-align"] ?? "").trim().toLowerCase();
+  if (!value || value === "baseline") return 0;
+  if (value === "super" || value === "sup" || value === "text-top") return -size * 0.38;
+  if (value === "sub" || value === "text-bottom") return size * 0.22;
+  if (value.endsWith("%")) {
+    const percent = Number.parseFloat(value);
+    if (Number.isFinite(percent)) return -size * percent / 100;
+  }
+  const length = cssLengthPt(value, size);
+  return length == null ? 0 : -length;
+}
+
 function needsManualInlineLayout(inlines: ParsedInlineSegment[]): boolean {
-  return inlines.some((segment) => hasInlineBoxStyle(segment));
+  return inlines.some((segment) => hasInlineBoxStyle(segment) || inlineBaselineShift(segment, inlineSize(segment, 10)) !== 0);
 }
 
 function breakLongToken(doc: PdfKitDocument, font: string, size: number, token: string, width: number): string {
@@ -1381,11 +1507,15 @@ function inlineItem(
   const border = boxed ? inlineBoxBorder(segment.styles) : { width: 0, style: "none" as const };
   const background = parseCssColor(segment.styles["background-color"]);
   const textValue = applyTextTransform(text, segment.styles);
+  const baselineShift = boxed ? 0 : inlineBaselineShift(segment, size);
   ctx.doc.font(font).fontSize(size);
   const textWidth = ctx.doc.widthOfString(textValue);
   const textHeight = ctx.doc.heightOfString(textValue || " ", { width: Math.max(1, textWidth + 2), lineBreak: false });
   const width = textWidth + padding.left + padding.right + border.width * 2;
   const height = Math.max(size * 1.15, textHeight) + padding.top + padding.bottom + border.width * 2;
+  const visualTop = Math.min(0, baselineShift);
+  const visualBottom = Math.max(height, baselineShift + height);
+  const visualHeight = visualBottom - visualTop;
   const item: InlineLayoutItem = {
     segment,
     text: textValue,
@@ -1394,10 +1524,14 @@ function inlineItem(
     color: inlineColor(segment, fallbackColor),
     width,
     height,
+    visualHeight,
+    baselineShift,
+    visualTop,
+    visualBottom,
     textWidth,
     padding,
     border,
-    radius: boxed ? borderRadiusPt(segment.styles, width, height) : 0,
+    radius: boxed ? boxRadiusPt(segment.styles, width, height) : boxRadiusPt({}, width, height),
     decoration: (segment.styles["text-decoration"] ?? "").toLowerCase(),
     boxed,
     whitespace,
@@ -1413,13 +1547,19 @@ function inlineItemWithText(ctx: StreamContext, item: InlineLayoutItem, text: st
   const textHeight = ctx.doc.heightOfString(text || " ", { width: Math.max(1, textWidth + 2), lineBreak: false });
   const width = textWidth + item.padding.left + item.padding.right + item.border.width * 2;
   const height = Math.max(item.size * 1.15, textHeight) + item.padding.top + item.padding.bottom + item.border.width * 2;
+  const visualTop = Math.min(0, item.baselineShift);
+  const visualBottom = Math.max(height, item.baselineShift + height);
+  const visualHeight = visualBottom - visualTop;
   return {
     ...item,
     text,
     width,
     height,
+    visualHeight,
+    visualTop,
+    visualBottom,
     textWidth,
-    radius: item.boxed ? borderRadiusPt(item.segment.styles, width, height) : 0,
+    radius: item.boxed ? boxRadiusPt(item.segment.styles, width, height) : boxRadiusPt({}, width, height),
   };
 }
 
@@ -1462,7 +1602,11 @@ function layoutInlineLines(ctx: StreamContext, items: InlineLayoutItem[], width:
       currentWidth -= current[current.length - 1]!.width;
       current.pop();
     }
-    if (current.length > 0) lines.push({ items: current, width: Math.max(0, currentWidth), height: Math.max(1, currentHeight) });
+    if (current.length > 0) {
+      const top = Math.min(0, ...current.map((item) => item.visualTop));
+      const bottom = Math.max(1, ...current.map((item) => item.visualBottom));
+      lines.push({ items: current, width: Math.max(0, currentWidth), height: Math.max(1, bottom - top) });
+    }
     current = [];
     currentWidth = 0;
     currentHeight = 0;
@@ -1477,7 +1621,7 @@ function layoutInlineLines(ctx: StreamContext, items: InlineLayoutItem[], width:
           next.whitespace = false;
           current.push(next);
           currentWidth += next.width;
-          currentHeight = Math.max(currentHeight, next.height);
+          currentHeight = Math.max(currentHeight, next.visualHeight);
         }
         if (i < parts.length - 1) flush();
       }
@@ -1487,14 +1631,14 @@ function layoutInlineLines(ctx: StreamContext, items: InlineLayoutItem[], width:
     if (!noWrap && item.whitespace && current.length === 0) continue;
     current.push(item);
     currentWidth += item.width;
-    currentHeight = Math.max(currentHeight, item.height);
+    currentHeight = Math.max(currentHeight, item.visualHeight);
   }
   flush();
   return lines.length > 0 ? lines : [{ items: [], width: 0, height: fallbackLineHeight(items) }];
 }
 
 function fallbackLineHeight(items: InlineLayoutItem[]): number {
-  return Math.max(1, ...items.map((item) => item.height));
+  return Math.max(1, ...items.map((item) => item.visualHeight));
 }
 
 function inlineManualHeight(
@@ -1527,8 +1671,9 @@ function drawManualInlineText(
   let cursorY = y;
   for (const line of lines) {
     let cursorX = align === "right" ? x + width - line.width : align === "center" ? x + (width - line.width) / 2 : x;
+    const lineTop = Math.min(0, ...line.items.map((item) => item.visualTop));
     for (const item of line.items) {
-      const itemY = cursorY + (line.height - item.height) / 2;
+      const itemY = cursorY - lineTop + item.baselineShift;
       if (item.background) fillBox(ctx, cursorX, itemY, item.width, item.height, item.background, item.radius);
       strokeBox(ctx, cursorX, itemY, item.width, item.height, item.border, item.radius);
       ctx.doc
@@ -1773,6 +1918,13 @@ function cellBlockAlign(style: StyleMap): "left" | "center" | "right" {
   return align === "center" || align === "right" ? align : "left";
 }
 
+function cellBlockVerticalAlign(style: StyleMap): CellVerticalAlign {
+  const align = (style["vertical-align"] ?? style["align-items"] ?? "").trim().toLowerCase();
+  if (align === "middle" || align === "center") return "middle";
+  if (align === "bottom" || align === "end" || align === "flex-end") return "bottom";
+  return "top";
+}
+
 function richBlockTextWidth(ctx: StreamContext, block: Extract<ParsedCellBlock, { type: "text" | "heading" }>, fallbackFont: string, fallbackSize: number): number {
   const size = cellBlockFontSize(block, fallbackSize);
   const font = fontForStyle(ctx, block.style, block.type === "heading" ? ctx.boldFontName : fallbackFont);
@@ -1832,13 +1984,18 @@ function estimateRichCellHeight(ctx: StreamContext, cell: ParsedCell, width: num
   return cell.richBlocks.reduce((sum, block) => sum + estimateRichBlockHeight(ctx, block, width, fallbackFont, fallbackSize), 0);
 }
 
-function drawRichBlockBox(ctx: StreamContext, style: StyleMap, x: number, y: number, width: number, height: number, border: BorderStyle, padding: BoxSpacing): number {
-  const radius = borderRadiusPt(style, width, height);
-  drawBoxShadow(ctx, style, x, y, width, height, radius);
+function drawRichBlockBox(ctx: StreamContext, style: StyleMap, x: number, y: number, width: number, height: number, border: BorderStyle, padding: BoxSpacing): BoxRadius {
+  const radius = boxRadiusPt(style, width, height);
+  drawBoxShadow(ctx, style, x, y, width, height, maxBoxRadius(radius));
   const bg = parseCssColor(style["background-color"]);
   if (bg) fillBox(ctx, x, y, width, height, bg, radius);
   strokeBox(ctx, x, y, width, height, border, radius);
-  return Math.max(0, radius - Math.max(padding.left, padding.top));
+  return {
+    topLeft: Math.max(0, radius.topLeft - Math.max(padding.left, padding.top)),
+    topRight: Math.max(0, radius.topRight - Math.max(padding.right, padding.top)),
+    bottomRight: Math.max(0, radius.bottomRight - Math.max(padding.right, padding.bottom)),
+    bottomLeft: Math.max(0, radius.bottomLeft - Math.max(padding.left, padding.bottom)),
+  };
 }
 
 function absoluteRichBlockRect(
@@ -1915,6 +2072,7 @@ async function drawRichBlock(
     return margin.top + boxHeight + margin.bottom;
   }
 
+  const outerRadius = boxRadiusPt(block.style, boxWidth, boxHeight);
   const contentRadius = drawRichBlockBox(ctx, block.style, drawX, drawY, boxWidth, boxHeight, border, padding);
   await drawBackgroundImage(ctx, block.style, drawX, drawY, boxWidth, boxHeight, borderRadiusPt(block.style, boxWidth, boxHeight));
 
@@ -1924,7 +2082,7 @@ async function drawRichBlock(
     const innerWidth = Math.max(8, boxWidth - border.width * 2 - padding.left - padding.right);
     const innerHeight = Math.max(1, boxHeight - border.width * 2 - padding.top - padding.bottom);
     ctx.doc.save();
-    if (isOverflowHidden(block.style) || contentRadius > 0) clipBox(ctx, innerX, innerY, innerWidth, innerHeight, contentRadius);
+    if (isOverflowHidden(block.style) || maxBoxRadius(outerRadius) > 0) clipBox(ctx, drawX, drawY, boxWidth, boxHeight, outerRadius);
     await drawRichBlocks(ctx, block.blocks.filter((child) => !isAbsoluteBlock(child)), innerX, innerY, innerWidth, innerHeight, fallbackFont, fallbackSize, fallbackColor);
     for (const child of block.blocks.filter(isAbsoluteBlock)) {
       const rect = absoluteRichBlockRect(ctx, child, drawX, drawY, boxWidth, boxHeight, fallbackFont, fallbackSize);
@@ -1945,8 +2103,11 @@ async function drawRichBlock(
   const noWrap = isNoWrapStyle(block.style);
   const displayInlines = displayInlineSegments(ctx, block.text, block.inlines, font, size, contentWidth, block.style);
   const textHeightValue = inlineTextHeight(ctx, block.text, displayInlines, font, size, contentWidth, lineGap, noWrap);
-  const textY = verticalContentY(contentY, contentHeight, textHeightValue, (block.style["vertical-align"] ?? "").trim().toLowerCase() === "middle" ? "middle" : "top");
+  const textY = verticalContentY(contentY, contentHeight, textHeightValue, cellBlockVerticalAlign(block.style));
+  ctx.doc.save();
+  if (isOverflowHidden(block.style) || maxBoxRadius(contentRadius) > 0) clipBox(ctx, contentX, contentY, contentWidth, contentHeight, contentRadius);
   drawInlineText(ctx, block.text, displayInlines, contentX, textY, contentWidth, font, size, textColor, lineGap, cellBlockAlign(block.style), noWrap);
+  ctx.doc.restore();
   return margin.top + boxHeight + margin.bottom;
 }
 

@@ -23,9 +23,11 @@
 - cell background colors for highlights
 - cell and block background images
 - rounded cells/blocks and simplified shadows
+- per-corner `border-radius` for badges/cards
 - section rows
 - horizontal and vertical cell alignment
 - text wrapping
+- inline superscript/subscript through `sup`, `sub`, CSS `vertical-align`, and `baseline-shift`
 - nowrap, pre-line/pre-wrap, and ellipsis text overflow
 - inline badges/chips with `display: inline-block`, padding, borders, rounded backgrounds, and text transforms
 - rich table cells with nested card-like boxes, headings, paragraphs, images, and absolute corner badges

@@ -169,6 +169,14 @@ function parseInlineSegments(node: AnyNode, rules: CssRule[], inherited: Record<
     if (name === "em" || name === "i") style = mergeStyle(style, { "font-style": "italic" });
     if (name === "u") style = mergeStyle(style, { "text-decoration": "underline" });
     if (name === "s" || name === "del") style = mergeStyle(style, { "text-decoration": "line-through" });
+    if (name === "sup") style = mergeStyle(style, {
+      "vertical-align": ownStyle["vertical-align"] ?? "super",
+      "font-size": ownStyle["font-size"] ?? "75%",
+    });
+    if (name === "sub") style = mergeStyle(style, {
+      "vertical-align": ownStyle["vertical-align"] ?? "sub",
+      "font-size": ownStyle["font-size"] ?? "75%",
+    });
     if (name === "code") style = mergeStyle(style, { "font-family": "monospace", "background-color": style["background-color"] ?? "#f6f8fa" });
     inlineBox = inlineBox || (isInlineBoxElement(name) && (name === "code" || hasInlineBoxStyle(ownStyle)));
     if (style["display"]?.trim().toLowerCase() === "none" || style["visibility"]?.trim().toLowerCase() === "hidden") return [];
@@ -235,6 +243,8 @@ function inheritableStyle(style: Record<string, string>): Record<string, string>
     "text-align",
     "text-decoration",
     "text-transform",
+    "vertical-align",
+    "baseline-shift",
     "white-space",
     "word-break",
     "word-wrap",
@@ -264,7 +274,8 @@ function parsedTextCellBlock(el: Element, rules: CssRule[], inherited: Record<st
   const inheritedText = inheritableStyle(inherited);
   const style = mergeStyle(inheritedText, resolveElementStyle(el, rules));
   if (isHiddenStyle(style)) return undefined;
-  const inlines = normalizeInlineSegments(parseInlineSegments(el, rules, inheritedText));
+  const textStyle = inheritableStyle(style);
+  const inlines = normalizeInlineSegments((el.children ?? []).flatMap((child) => parseInlineSegments(child, rules, textStyle)));
   const text = inlineText(inlines) || normalizeWhitespace(textWithBreaks(el));
   if (!text && inlines.length === 0) return undefined;
   const name = el.name.toLowerCase();

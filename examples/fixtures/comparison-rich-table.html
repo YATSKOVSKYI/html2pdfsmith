@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <title>Rich Comparison Table</title>
+    <style>
+      @page { size: A4 landscape; margin: 5mm; }
+      body {
+        font-family: "Open Sans";
+        color: #202638;
+      }
+      table.compare {
+        width: 100%;
+        table-layout: fixed;
+        border-collapse: collapse;
+        border: 1px solid #e5e8ee;
+      }
+      col.param { width: 172px; }
+      col.model { width: 31.5%; }
+      th, td {
+        border: 1px solid #e2e6ed;
+        padding: 0;
+        vertical-align: middle;
+        background-color: #ffffff;
+      }
+      td.param {
+        padding: 13px 12px;
+        color: #667085;
+        font-size: 9px;
+        font-weight: 600;
+        text-align: left;
+        background-color: #fbfcfe;
+      }
+      td.param-top {
+        vertical-align: top;
+        letter-spacing: 2px;
+        line-height: 1.75;
+        font-size: 8px;
+        text-transform: uppercase;
+      }
+      td.model-cell {
+        padding: 9px;
+        height: 190px;
+        vertical-align: top;
+      }
+      .model-card {
+        position: relative;
+        height: 172px;
+        overflow: hidden;
+        border: 1px solid #dfe4ec;
+        border-radius: 11px;
+        background-color: #ffffff;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, .08);
+      }
+      .year,
+      .brand,
+      .price-tag {
+        position: absolute;
+        display: inline-block;
+        padding: 5px 12px;
+        border: 1px solid #cfd4dc;
+        background-color: #d9dadd;
+        color: #555b66;
+        font-size: 7.5px;
+        font-weight: 800;
+        text-align: center;
+        text-transform: uppercase;
+        vertical-align: middle;
+        white-space: nowrap;
+      }
+      .year {
+        left: 0;
+        top: 0;
+        border-radius: 10px 0 8px 0;
+      }
+      .brand {
+        right: 0;
+        top: 0;
+        border-radius: 0 10px 0 8px;
+        letter-spacing: 2px;
+        color: #202226;
+      }
+      .price-tag {
+        left: 0;
+        top: 96px;
+        color: #9ca3af;
+        border-radius: 0 8px 8px 0;
+      }
+      .hero-car {
+        width: 182px;
+        height: 82px;
+        margin-top: 26px;
+        margin-bottom: 14px;
+        text-align: center;
+        object-fit: contain;
+        object-position: center center;
+      }
+      .model-card h3 {
+        margin: 0 13px 7px;
+        font-size: 13px;
+        line-height: 1.05;
+        color: #07111f;
+      }
+      .model-card p {
+        margin: 0 13px;
+        color: #646b7a;
+        font-size: 8px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+      .section td {
+        height: 30px;
+        background-color: #f6f7f9;
+        color: #20242c;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        padding: 0 12px;
+      }
+      .section .count {
+        color: #b8bec8;
+        font-size: 6px;
+        font-weight: 700;
+      }
+      td.value {
+        height: 35px;
+        padding: 9px 12px;
+        text-align: center;
+        color: #26324a;
+        font-size: 9px;
+        line-height: 1.35;
+      }
+      tr.alt td { background-color: #fbfbfc; }
+      .dash {
+        color: #30364a;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <table class="compare">
+      <colgroup>
+        <col class="param">
+        <col class="model">
+        <col class="model">
+        <col class="model">
+      </colgroup>
+      <tbody>
+        <tr>
+          <td class="param param-top">Группа<br>Параметр</td>
+          <td class="model-cell">
+            <div class="model-card">
+              <span class="year">2025</span>
+              <span class="brand">AION</span>
+              <img class="hero-car" src="../assets/aion-car.svg" alt="AION i60">
+              <span class="price-tag">Нет цены</span>
+              <h3>AION i60</h3>
+              <p>Extended Range Basic Model</p>
+            </div>
+          </td>
+          <td class="model-cell">
+            <div class="model-card">
+              <span class="year">2025</span>
+              <span class="brand">AION</span>
+              <img class="hero-car" src="../assets/aion-car.svg" alt="AION i60">
+              <span class="price-tag">Нет цены</span>
+              <h3>AION i60</h3>
+              <p>Pure Electric High Power Basic Model</p>
+            </div>
+          </td>
+          <td class="model-cell">
+            <div class="model-card">
+              <span class="year">2025</span>
+              <span class="brand">AION</span>
+              <img class="hero-car" src="../assets/aion-car.svg" alt="AION i60">
+              <span class="price-tag">Нет цены</span>
+              <h3>AION i60</h3>
+              <p>Pure Electric Low Power Basic Model</p>
+            </div>
+          </td>
+        </tr>
+        <tr class="section">
+          <td colspan="4">⌄ Основная информация <span class="count">(12)</span></td>
+        </tr>
+        <tr>
+          <td class="param">Официальная рекомендованная цена.</td>
+          <td class="value">Пока нет цены.</td>
+          <td class="value">Пока нет цены.</td>
+          <td class="value">Пока нет цены.</td>
+        </tr>
+        <tr class="alt">
+          <td class="param">Уровень</td>
+          <td class="value"><span class="dash">-</span></td>
+          <td class="value"><span class="dash">-</span></td>
+          <td class="value"><span class="dash">-</span></td>
+        </tr>
+        <tr>
+          <td class="param">Тип энергии</td>
+          <td class="value">Автомобиль с увеличенным запасом хода</td>
+          <td class="value">Чисто электрический</td>
+          <td class="value">Чисто электрический</td>
+        </tr>
+        <tr class="alt">
+          <td class="param">Дата выхода на рынок</td>
+          <td class="value"><span class="dash">-</span></td>
+          <td class="value"><span class="dash">-</span></td>
+          <td class="value"><span class="dash">-</span></td>
+        </tr>
+        <tr>
+          <td class="param">Электродвигатель</td>
+          <td class="value">231 л.с.</td>
+          <td class="value">245 л.с.</td>
+          <td class="value">204 л.с.</td>
+        </tr>
+        <tr class="alt">
+          <td class="param">Запас хода CLTC</td>
+          <td class="value">1240 км</td>
+          <td class="value">650 км</td>
+          <td class="value">560 км</td>
+        </tr>
+        <tr>
+          <td class="param">Быстрая зарядка</td>
+          <td class="value">0.3 часа</td>
+          <td class="value">0.28 часа</td>
+          <td class="value">0.35 часа</td>
+        </tr>
+        <tr class="alt">
+          <td class="param">Привод</td>
+          <td class="value">Передний</td>
+          <td class="value">Передний</td>
+          <td class="value">Передний</td>
+        </tr>
+      </tbody>
+    </table>
+  </body>
+</html>
