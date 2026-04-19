@@ -28,7 +28,7 @@ interface BenchmarkMetrics {
 
 const targetPages = Number(Bun.argv.find((arg) => arg.startsWith("--pages="))?.split("=")[1] ?? 15);
 const dataPages = Math.max(1, targetPages - 1);
-const rowsPerPage = Number(Bun.argv.find((arg) => arg.startsWith("--rows-per-page="))?.split("=")[1] ?? 10);
+const rowsPerPage = Number(Bun.argv.find((arg) => arg.startsWith("--rows-per-page="))?.split("=")[1] ?? 12);
 const outputPath = resolve(process.cwd(), Bun.argv.find((arg) => arg.endsWith(".pdf")) ?? "examples/internal-benchmark.pdf");
 
 function mb(bytes: number): number {
@@ -131,7 +131,7 @@ function sectionTable(page: number): string {
         </tr>
       </thead>
       <tbody>
-        <tr class="section-row"><td colspan="8">Benchmark section ${page} <span class="muted">(${rowsPerPage} rows)</span></td></tr>
+        <tr class="section-row"><td colspan="8">Benchmark section ${page} | ${rowsPerPage} rows</td></tr>
         ${rows}
       </tbody>
     </table>
@@ -140,9 +140,19 @@ function sectionTable(page: number): string {
 
 function metricsHtml(metrics?: BenchmarkMetrics): string {
   const pending = !metrics;
+  const memoryValues = pending ? "0,0,0" : `${metrics.before.rss},${metrics.deltaPeakRss},${metrics.peakRss}`;
+  const renderValues = pending
+    ? "0,0,0,0"
+    : `${Math.round(metrics.renderMs)},${Math.round(metrics.pdfBytes / 1024)},${metrics.rows},${metrics.cells}`;
+  const footprintValues = pending
+    ? "0,0,0"
+    : `${Math.round(metrics.after.heapUsed)},${Math.round(metrics.after.external)},${Math.round(metrics.after.arrayBuffers)}`;
   return `<section class="metrics-page">
     <h1>Html2PdfSmith Internal Benchmark</h1>
     <p class="lead">HTML table stress document with rich table cells, SVG, rounded badges, sub/sup, baseline-shift, page chrome, watermarks, repeated table structure, wrapping and alignment.</p>
+    <chart class="chart-card chart-memory" type="bar" title="Memory profile" subtitle="Warm process, extra render memory, and whole process peak RSS" unit=" MB" data-labels="Warm RSS,Render Delta,Peak RSS" data-values="${memoryValues}" data-colors="#334155,#2563eb,#0f766e"></chart>
+    <chart class="chart-card chart-line" type="line" title="Render workload" subtitle="Time, output size, rows, and cells in this HTML-first benchmark" data-labels="Time ms,PDF KB,Rows,Cells" data-values="${renderValues}" data-colors="#7c3aed"></chart>
+    <chart class="chart-card chart-donut" type="donut" title="Runtime memory mix" subtitle="Heap, external allocations and array buffers after render" unit=" MB" data-labels="Heap,External,Buffers" data-values="${footprintValues}" data-colors="#2563eb,#f59e0b,#0f766e"></chart>
     <table class="memory-table">
       <tbody>
         <tr>
@@ -181,14 +191,7 @@ function metricsHtml(metrics?: BenchmarkMetrics): string {
         </tr>
       </tbody>
     </table>
-    <table class="metrics-table">
-      <tbody>
-        <tr><td class="metric-key">RSS before</td><td>${pending ? "pending" : formatMb(metrics.before.rss)}</td><td class="metric-key">RSS after</td><td>${pending ? "pending" : formatMb(metrics.after.rss)}</td></tr>
-        <tr><td class="metric-key">External memory</td><td>${pending ? "pending" : formatMb(metrics.after.external)}</td><td class="metric-key">Array buffers</td><td>${pending ? "pending" : formatMb(metrics.after.arrayBuffers)}</td></tr>
-        <tr><td class="metric-key">Warnings</td><td colspan="3">${pending ? "pending" : metrics.warnings.length === 0 ? "none" : metrics.warnings.map((warning) => warning.code).join(", ")}</td></tr>
-      </tbody>
-    </table>
-    <p class="footnote">Metrics are captured from the measured render pass. The final pass embeds those values into this HTML page.</p>
+    <p class="footnote">Warnings: ${pending ? "pending" : metrics.warnings.length === 0 ? "none" : metrics.warnings.map((warning) => warning.code).join(", ")}.</p>
   </section>`;
 }
 
@@ -204,18 +207,17 @@ function buildBenchmarkHtml(metrics?: BenchmarkMetrics): string {
       body { font-family: "Open Sans"; color: #172033; }
       .bench-page { padding-top: 2px; }
       .bench-table { width: 100%; table-layout: fixed; border-collapse: collapse; border: 1px solid #d5dce7; }
-      th { padding: 6px 5px; border: 1px solid #b8c4d3; background-color: #e9eff7; color: #172033; font-family: "Roboto Condensed"; font-size: 8.2px; font-weight: 700; text-transform: uppercase; text-align: center; }
-      td { padding: 4px 5px; border: 1px solid #d9e0ea; font-size: 7.1px; line-height: 1.18; vertical-align: middle; }
+      th { padding: 5px 5px; border: 1px solid #b8c4d3; background-color: #e9eff7; color: #172033; font-family: "Roboto Condensed"; font-size: 8px; font-weight: 700; text-transform: uppercase; text-align: center; }
+      td { padding: 3px 5px; border: 1px solid #d9e0ea; font-size: 6.9px; line-height: 1.14; vertical-align: middle; }
       tr.alt td { background-color: #fbfcfe; }
-      .section-row td { padding: 7px 9px; background-color: #172033; color: #ffffff; font-family: "Roboto Condensed"; font-size: 9.5px; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: 1px; }
-      .muted { color: #aeb8c8; font-size: 7px; }
+      .section-row td { padding: 6px 9px; background-color: #172033; color: #ffffff; font-family: "Roboto Condensed"; font-size: 9px; font-weight: 700; text-align: left; text-transform: uppercase; }
       .id { font-family: "Noto Sans"; color: #42526a; white-space: nowrap; }
       .model { padding: 4px; }
-      .mini-card { position: relative; height: 36px; overflow: hidden; border-radius: 7px; border: 1px solid #d5dce7; background-color: #ffffff; background-image: url("${patternSvg}"); background-size: 32px 32px; background-repeat: repeat; }
+      .mini-card { position: relative; height: 32px; overflow: hidden; border-radius: 7px; border: 1px solid #d5dce7; background-color: #ffffff; background-image: url("${patternSvg}"); background-size: 32px 32px; background-repeat: repeat; }
       .corner { position: absolute; top: 0; left: 0; display: inline-block; width: 28px; padding: 2px 0; border-radius: 7px 0 6px 0; background-color: #e2e8f0; border: 1px solid #cbd5e1; color: #475569; font-size: 5.2px; font-weight: 800; text-align: center; vertical-align: middle; }
-      .mini-icon { width: 19px; height: 19px; margin-top: 14px; margin-left: 8px; object-fit: contain; }
-      .mini-card strong { position: absolute; left: 34px; top: 10px; font-size: 7.9px; color: #111827; }
-      .mini-card .subline { position: absolute; left: 34px; top: 22px; font-size: 6.1px; color: #64748b; }
+      .mini-icon { width: 18px; height: 18px; margin-top: 12px; margin-left: 8px; object-fit: contain; }
+      .mini-card strong { position: absolute; left: 34px; top: 8px; font-size: 7.6px; color: #111827; }
+      .mini-card .subline { position: absolute; left: 34px; top: 20px; font-size: 5.8px; color: #64748b; }
       .badge { display: inline-block; padding: 3px 7px; border-radius: 999px; font-size: 6.5px; font-weight: 800; text-transform: uppercase; white-space: nowrap; text-align: center; vertical-align: middle; }
       .ok { background-color: #dcfce7; color: #14532d; border: 1px solid #86efac; }
       .warn { background-color: #fff7ed; color: #9a3412; border: 1px dashed #fdba74; }
@@ -227,8 +229,11 @@ function buildBenchmarkHtml(metrics?: BenchmarkMetrics): string {
       .shift-up { baseline-shift: 35%; font-size: 70%; color: #0f766e; }
       .shift-down { baseline-shift: -20%; font-size: 70%; color: #9a3412; }
       .metrics-page { padding: 8px 18px; }
-      .metrics-page h1 { margin: 0 0 5px; font-family: "Anton"; font-size: 24px; font-weight: 400; color: #111827; text-align: center; }
-      .lead { margin: 0 0 8px; font-size: 8px; color: #5b677a; text-align: center; line-height: 1.35; }
+      .metrics-page h1 { margin: 0 0 4px; font-family: "Anton"; font-size: 23px; font-weight: 400; color: #111827; text-align: center; }
+      .lead { margin: 0 0 7px; font-size: 7.8px; color: #5b677a; text-align: center; line-height: 1.3; }
+      .chart-card { height: 58px; margin-bottom: 5px; padding: 7px 10px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 5px 14px rgba(15, 23, 42, 0.10); }
+      .chart-line { height: 52px; }
+      .chart-donut { height: 54px; }
       .memory-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 0 0 8px; border: 1px solid #cbd5e1; }
       .memory-title { padding: 6px 8px; background-color: #172033; color: #ffffff; font-family: "Roboto Condensed"; font-size: 9px; font-weight: 700; text-transform: uppercase; }
       .memory-label { padding: 7px 8px; background-color: #eef3f8; color: #475569; font-size: 7px; font-weight: 700; text-transform: uppercase; }
@@ -238,10 +243,7 @@ function buildBenchmarkHtml(metrics?: BenchmarkMetrics): string {
       .metric { padding: 7px 8px; border: 4px solid #ffffff; border-radius: 8px; background-color: #f8fafc; }
       .metric-label { color: #64748b; font-size: 7px; text-transform: uppercase; }
       .metric strong { color: #0f172a; font-size: 10.5px; }
-      .metrics-table { width: 100%; border-collapse: collapse; border: 1px solid #d8e0ea; }
-      .metrics-table td { padding: 6px 8px; font-size: 7.5px; border: 1px solid #d8e0ea; }
-      .metric-key { background-color: #f1f5f9; color: #475569; font-weight: 700; }
-      .footnote { margin-top: 8px; color: #64748b; font-size: 7.5px; text-align: center; }
+      .footnote { margin-top: 0; margin-bottom: 0; color: #64748b; font-size: 6.8px; text-align: center; }
     </style>
   </head>
   <body>

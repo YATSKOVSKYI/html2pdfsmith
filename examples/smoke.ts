@@ -272,6 +272,22 @@ if (visualLoaded.getPageCount() !== visualCss.pages) {
 }
 console.log({ name: "visual-css-controls", pages: visualCss.pages, bytes: visualCss.pdf.byteLength, warnings: visualCss.warnings.length });
 
+const chartControls = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    chart { height: 78px; margin-bottom: 8px; padding: 8px 10px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #fff; }
+  </style></head><body>
+    <chart type="bar" title="Memory" subtitle="Direct PDF chart" unit=" MB" data-labels="Warm,Render,Peak" data-values="248,96,344" data-colors="#334155,#2563eb,#0f766e"></chart>
+    <chart type="line" title="Trend" data-labels="A,B,C,D" data-values="10,18,14,26" data-colors="#7c3aed"></chart>
+    <chart type="donut" title="Mix" unit=" MB" data-labels="Heap,External,Buffers" data-values="34,18,2" data-colors="#2563eb,#f59e0b,#0f766e"></chart>
+  </body></html>`,
+  hideHeader: true,
+});
+const chartControlsLoaded = await PDFDocument.load(chartControls.pdf);
+if (chartControlsLoaded.getPageCount() !== chartControls.pages) {
+  throw new Error("chart controls: reported page count mismatch");
+}
+console.log({ name: "chart-controls", pages: chartControls.pages, bytes: chartControls.pdf.byteLength, warnings: chartControls.warnings.length });
+
 const productionLayout = await renderHtmlToPdfDetailed({
   html: `<!doctype html><html><head><style>
     @media screen { h1 { color: red; } .screen-only { display: block; } }

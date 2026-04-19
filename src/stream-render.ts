@@ -209,6 +209,8 @@ const COLORS = {
   diffBg: "#fff1bf",
 };
 
+const CHART_COLORS = ["#2563eb", "#0f766e", "#f59e0b", "#7c3aed", "#dc2626", "#0891b2", "#4f46e5", "#65a30d"];
+
 function asOpacity(value: number | undefined, fallback: number): number {
   if (value == null) return fallback;
   if (value <= 1) return clamp(value, 0.01, 1);
@@ -1295,6 +1297,7 @@ function blockMarginBottom(block: ParsedBlock): number {
   if (block.type === "heading") return cssLengthPt(block.style["margin-bottom"]) ?? 8;
   if (block.type === "paragraph" || block.type === "list-item" || block.type === "blockquote" || block.type === "preformatted") return cssLengthPt(block.style["margin-bottom"]) ?? 6;
   if (block.type === "image") return cssLengthPt(block.style["margin-bottom"]) ?? 8;
+  if (block.type === "chart") return cssLengthPt(block.style["margin-bottom"]) ?? 8;
   return cssLengthPt(block.style["margin-bottom"]) ?? 4;
 }
 
@@ -1847,6 +1850,204 @@ function drawHrBlock(ctx: StreamContext, block: Extract<ParsedBlock, { type: "hr
   ctx.y += top;
   ctx.doc.moveTo(ctx.margin, ctx.y).lineTo(ctx.margin + ctx.tableWidth, ctx.y).strokeColor(parseCssColor(block.style["border-color"]) ?? COLORS.border).lineWidth(cssLengthPt(block.style["border-width"]) ?? 0.7).stroke();
   ctx.y += bottom;
+}
+
+function chartColor(block: Extract<ParsedBlock, { type: "chart" }>, index: number): string {
+  const raw = block.chart.colors?.[index] ?? CHART_COLORS[index % CHART_COLORS.length] ?? "#2563eb";
+  return parseCssColor(raw) ?? raw;
+}
+
+function chartTitleHeight(ctx: StreamContext, block: Extract<ParsedBlock, { type: "chart" }>, width: number): number {
+  let height = 0;
+  if (block.chart.title) {
+    ctx.doc.font(fontForStyle(ctx, block.style, ctx.boldFontName)).fontSize(cssLengthPt(block.style["font-size"]) ?? 11);
+    height += ctx.doc.heightOfString(block.chart.title, { width, lineGap: 1 });
+  }
+  if (block.chart.subtitle) {
+    ctx.doc.font(ctx.regularFontName).fontSize(7.5);
+    height += ctx.doc.heightOfString(block.chart.subtitle, { width, lineGap: 1 }) + 2;
+  }
+  return height > 0 ? height + 8 : 0;
+}
+
+function drawChartHeader(ctx: StreamContext, block: Extract<ParsedBlock, { type: "chart" }>, x: number, y: number, width: number): number {
+  let cursor = y;
+  if (block.chart.title) {
+    ctx.doc
+      .font(fontForStyle(ctx, block.style, ctx.boldFontName))
+      .fontSize(cssLengthPt(block.style["font-size"]) ?? 11)
+      .fillColor(parseCssColor(block.style["color"]) ?? "#0f172a")
+      .text(block.chart.title, x, cursor, { width, lineBreak: false });
+    cursor += 14;
+  }
+  if (block.chart.subtitle) {
+    ctx.doc
+      .font(ctx.regularFontName)
+      .fontSize(7.5)
+      .fillColor("#64748b")
+      .text(block.chart.subtitle, x, cursor, { width, lineBreak: false });
+    cursor += 12;
+  }
+  return cursor + (cursor > y ? 4 : 0);
+}
+
+function drawChartLegend(ctx: StreamContext, block: Extract<ParsedBlock, { type: "chart" }>, x: number, y: number, width: number): void {
+  const maxItems = Math.min(block.chart.labels.length, block.chart.values.length, 6);
+  const itemWidth = width / Math.max(1, maxItems);
+  for (let i = 0; i < maxItems; i++) {
+    const itemX = x + i * itemWidth;
+    ctx.doc.roundedRect(itemX, y + 2, 6, 6, 1.5).fill(chartColor(block, i));
+    ctx.doc
+      .font(ctx.regularFontName)
+      .fontSize(6.4)
+      .fillColor("#64748b")
+      .text(block.chart.labels[i] ?? "", itemX + 9, y, { width: Math.max(8, itemWidth - 10), lineBreak: false });
+  }
+}
+
+function drawBarChart(ctx: StreamContext, block: Extract<ParsedBlock, { type: "chart" }>, x: number, y: number, width: number, height: number): void {
+  const values = block.chart.values;
+  const max = Math.max(1, ...values);
+  const plotLeft = x + 30;
+  const plotBottom = y + height - 20;
+  const plotTop = y + 8;
+  const plotWidth = Math.max(1, width - 38);
+  const plotHeight = Math.max(1, plotBottom - plotTop);
+  const gap = Math.min(10, plotWidth / Math.max(1, values.length) * 0.22);
+  const barWidth = Math.max(4, (plotWidth - gap * (values.length - 1)) / Math.max(1, values.length));
+
+  ctx.doc.save();
+  ctx.doc.strokeColor("#e2e8f0").lineWidth(0.5);
+  for (let i = 0; i <= 3; i++) {
+    const gy = plotTop + plotHeight * i / 3;
+    ctx.doc.moveTo(plotLeft, gy).lineTo(plotLeft + plotWidth, gy).stroke();
+  }
+  ctx.doc.font(ctx.regularFontName).fontSize(6.2).fillColor("#94a3b8");
+  ctx.doc.text(`${Math.round(max)}${block.chart.unit ?? ""}`, x, plotTop - 2, { width: 26, align: "right", lineBreak: false });
+  ctx.doc.text(`0${block.chart.unit ?? ""}`, x, plotBottom - 5, { width: 26, align: "right", lineBreak: false });
+
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i] ?? 0;
+    const barHeight = plotHeight * Math.max(0, value) / max;
+    const bx = plotLeft + i * (barWidth + gap);
+    const by = plotBottom - barHeight;
+    const color = chartColor(block, i);
+    fillBox(ctx, bx, by, barWidth, barHeight, color, { topLeft: 3, topRight: 3, bottomRight: 0, bottomLeft: 0 });
+    ctx.doc.font(ctx.boldFontName).fontSize(6.2).fillColor("#334155").text(String(Math.round(value)), bx - 3, by - 9, { width: barWidth + 6, align: "center", lineBreak: false });
+    ctx.doc.font(ctx.regularFontName).fontSize(5.6).fillColor("#64748b").text(block.chart.labels[i] ?? "", bx - 4, plotBottom + 4, { width: barWidth + 8, align: "center", lineBreak: false });
+  }
+  ctx.doc.restore();
+}
+
+function drawLineChart(ctx: StreamContext, block: Extract<ParsedBlock, { type: "chart" }>, x: number, y: number, width: number, height: number): void {
+  const values = block.chart.values;
+  const max = Math.max(1, ...values);
+  const min = Math.min(0, ...values);
+  const range = Math.max(1, max - min);
+  const plotLeft = x + 28;
+  const plotRight = x + width - 8;
+  const plotTop = y + 8;
+  const plotBottom = y + height - 20;
+  const plotWidth = Math.max(1, plotRight - plotLeft);
+  const plotHeight = Math.max(1, plotBottom - plotTop);
+  const points = values.map((value, index) => ({
+    x: plotLeft + plotWidth * (values.length === 1 ? 0 : index / (values.length - 1)),
+    y: plotBottom - (value - min) / range * plotHeight,
+  }));
+
+  ctx.doc.save();
+  ctx.doc.strokeColor("#e2e8f0").lineWidth(0.5);
+  for (let i = 0; i <= 3; i++) {
+    const gy = plotTop + plotHeight * i / 3;
+    ctx.doc.moveTo(plotLeft, gy).lineTo(plotRight, gy).stroke();
+  }
+  if (points.length > 1) {
+    ctx.doc.moveTo(points[0]!.x, plotBottom);
+    for (const point of points) ctx.doc.lineTo(point.x, point.y);
+    ctx.doc.lineTo(points[points.length - 1]!.x, plotBottom).closePath().fillOpacity(0.12).fill(chartColor(block, 0)).fillOpacity(1);
+    ctx.doc.moveTo(points[0]!.x, points[0]!.y);
+    for (const point of points.slice(1)) ctx.doc.lineTo(point.x, point.y);
+    ctx.doc.strokeColor(chartColor(block, 0)).lineWidth(2).stroke();
+  }
+  for (const point of points) {
+    ctx.doc.circle(point.x, point.y, 2.3).fill("#ffffff").strokeColor(chartColor(block, 0)).lineWidth(1.2).stroke();
+  }
+  ctx.doc.font(ctx.regularFontName).fontSize(5.8).fillColor("#64748b");
+  for (let i = 0; i < points.length; i++) {
+    ctx.doc.text(block.chart.labels[i] ?? "", points[i]!.x - 18, plotBottom + 5, { width: 36, align: "center", lineBreak: false });
+  }
+  ctx.doc.restore();
+}
+
+function drawDonutArc(ctx: StreamContext, cx: number, cy: number, radius: number, width: number, start: number, end: number, color: string): void {
+  const doc = ctx.doc as unknown as { arc?: (x: number, y: number, radius: number, start: number, end: number) => PdfKitDocument };
+  ctx.doc.save().lineWidth(width).strokeColor(color).lineCap("round");
+  if (typeof doc.arc === "function") doc.arc(cx, cy, radius, start, end).stroke();
+  ctx.doc.restore();
+}
+
+function drawDonutChart(ctx: StreamContext, block: Extract<ParsedBlock, { type: "chart" }>, x: number, y: number, width: number, height: number): void {
+  const values = block.chart.values.map((value) => Math.max(0, value));
+  const total = Math.max(1, values.reduce((sum, value) => sum + value, 0));
+  const radius = Math.min(height * 0.34, width * 0.16, 45);
+  const cx = x + width * 0.24;
+  const cy = y + height * 0.48;
+  let angle = -90;
+  ctx.doc.circle(cx, cy, radius).lineWidth(10).strokeColor("#e2e8f0").stroke();
+  for (let i = 0; i < values.length; i++) {
+    const sweep = values[i]! / total * 360;
+    drawDonutArc(ctx, cx, cy, radius, 10, angle, angle + sweep, chartColor(block, i));
+    angle += sweep;
+  }
+  ctx.doc.font(ctx.boldFontName).fontSize(13).fillColor("#0f172a").text(String(Math.round(total)), cx - radius, cy - 7, { width: radius * 2, align: "center", lineBreak: false });
+  if (block.chart.unit) ctx.doc.font(ctx.regularFontName).fontSize(6).fillColor("#64748b").text(block.chart.unit, cx - radius, cy + 8, { width: radius * 2, align: "center", lineBreak: false });
+
+  const legendX = x + width * 0.46;
+  const itemHeight = 14;
+  for (let i = 0; i < Math.min(values.length, block.chart.labels.length, 5); i++) {
+    const itemY = y + 16 + i * itemHeight;
+    ctx.doc.roundedRect(legendX, itemY + 2, 7, 7, 2).fill(chartColor(block, i));
+    ctx.doc.font(ctx.regularFontName).fontSize(7).fillColor("#475569").text(block.chart.labels[i] ?? "", legendX + 11, itemY, { width: width * 0.28, lineBreak: false });
+    ctx.doc.font(ctx.boldFontName).fontSize(7).fillColor("#0f172a").text(String(values[i]), x + width - 48, itemY, { width: 40, align: "right", lineBreak: false });
+  }
+}
+
+async function drawChartBlock(ctx: StreamContext, block: Extract<ParsedBlock, { type: "chart" }>): Promise<void> {
+  const margin = spacingPt(block.style, "margin", { top: 0, right: 0, bottom: 8, left: 0 });
+  const padding = spacingPt(block.style, "padding", { top: 10, right: 12, bottom: 10, left: 12 });
+  const border = borderPxToPt(parseBorderStyle(block.style, { width: 0.7 * 96 / 72, color: "#d8e0ea", style: "solid" }));
+  const outerWidth = Math.min(ctx.tableWidth - margin.left - margin.right, cssLengthPt(block.style["width"], ctx.tableWidth) ?? ctx.tableWidth - margin.left - margin.right);
+  const contentWidth = Math.max(40, outerWidth - padding.left - padding.right - border.width * 2);
+  const chartHeight = cssLengthPt(block.style["height"]) ?? 145;
+  const titleHeight = chartTitleHeight(ctx, block, contentWidth);
+  const outerHeight = chartHeight + titleHeight + padding.top + padding.bottom + border.width * 2;
+  ensureSpace(ctx, margin.top + outerHeight + margin.bottom);
+  ctx.y += margin.top;
+
+  const align = block.style["text-align"] === "center" ? "center" : block.style["text-align"] === "right" ? "right" : "left";
+  const x = align === "center"
+    ? ctx.margin + margin.left + (ctx.tableWidth - margin.left - margin.right - outerWidth) / 2
+    : align === "right"
+      ? ctx.margin + ctx.tableWidth - margin.right - outerWidth
+      : ctx.margin + margin.left;
+  const y = ctx.y;
+  const radius = borderRadiusPt(block.style, outerWidth, outerHeight);
+  drawBoxShadow(ctx, block.style, x, y, outerWidth, outerHeight, radius);
+  fillBox(ctx, x, y, outerWidth, outerHeight, parseCssColor(block.style["background-color"]) ?? "#ffffff", radius);
+  await drawBackgroundImage(ctx, block.style, x, y, outerWidth, outerHeight, radius);
+  strokeBox(ctx, x, y, outerWidth, outerHeight, border, radius);
+
+  const contentX = x + border.width + padding.left;
+  let cursor = drawChartHeader(ctx, block, contentX, y + border.width + padding.top, contentWidth);
+  if (cursor === y + border.width + padding.top) cursor = y + border.width + padding.top;
+  const plotY = cursor;
+  const plotHeight = Math.max(50, y + outerHeight - padding.bottom - border.width - plotY - 14);
+  if (block.chart.chartType === "line") drawLineChart(ctx, block, contentX, plotY, contentWidth, plotHeight);
+  else if (block.chart.chartType === "donut") drawDonutChart(ctx, block, contentX, plotY, contentWidth, plotHeight);
+  else drawBarChart(ctx, block, contentX, plotY, contentWidth, plotHeight);
+  if (block.chart.chartType !== "donut") drawChartLegend(ctx, block, contentX, y + outerHeight - padding.bottom - 11, contentWidth);
+
+  ctx.y += outerHeight + margin.bottom;
 }
 
 function fontForCell(ctx: StreamContext, cell: ParsedCell, row: ParsedRow): string {
@@ -2637,6 +2838,8 @@ async function drawBlock(ctx: StreamContext, block: ParsedBlock): Promise<void> 
     await drawTextBlock(ctx, block);
   } else if (block.type === "image") {
     await drawImageBlock(ctx, block);
+  } else if (block.type === "chart") {
+    await drawChartBlock(ctx, block);
   } else if (block.type === "hr") {
     drawHrBlock(ctx, block);
   } else if (block.type === "page-break") {

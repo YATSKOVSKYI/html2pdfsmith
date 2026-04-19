@@ -56,6 +56,7 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 - print CSS: `@media print` / `@media all` rules are applied, `@media screen` rules are ignored
 - content-aware `table-layout: auto` for tables without explicit `colgroup` widths
 - image support for PNG, JPEG, SVG, data URLs, local files, and HTTP(S) URLs
+- browserless charts through HTML `<chart>` blocks: bar, line/area, and donut charts
 - PNG/JPEG natural aspect-ratio handling when only width or height is provided
 - text and image watermarks
 - custom font paths, font bytes, optional bundled fonts, optional Google Fonts disk cache, and optional system font discovery
@@ -285,6 +286,7 @@ Html2PdfSmith supports a document-oriented HTML subset:
 - `ul`, `ol`, `li`
 - `table`, `thead`, `tbody`, `tfoot`, `colgroup`, `col`, `tr`, `th`, `td`
 - `img`, `hr`, `br`
+- `chart` for built-in PDF-rendered bar, line, and donut charts
 - `link rel="stylesheet"`, `style`
 - text nodes
 
@@ -328,6 +330,7 @@ The CSS support is intentionally pragmatic:
 - `colgroup` / `col style="width: ..."` for table column widths
 - `width`, `height` for images and tables
 - `height`, `min-height` for table rows and cells
+- `height`, `width`, `margin`, `padding`, `border`, `border-radius`, `background-color`, `box-shadow`, `font-size`, and `color` for `<chart>` blocks
 - `border-radius` for text boxes and table cells, including four-value shorthand and `border-*-radius`
 - `padding`, `border`, `border-radius`, and `background-color` for inline `span` badges/chips
 - simplified `box-shadow` for text boxes and table cells
