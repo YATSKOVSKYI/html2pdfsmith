@@ -88,8 +88,28 @@ function mergeStyle(base: Record<string, string>, next: Record<string, string>):
   return { ...base, ...next };
 }
 
+function isInlineBoxElement(name: string): boolean {
+  return name === "span" || name === "a" || name === "code" || name === "em" || name === "i" || name === "strong" || name === "b" || name === "u" || name === "s" || name === "del";
+}
+
+function hasInlineBoxStyle(style: Record<string, string>): boolean {
+  const display = (style["display"] ?? "").trim().toLowerCase();
+  return display === "inline-block"
+    || display === "inline-flex"
+    || !!style["background-color"]
+    || !!style["border"]
+    || !!style["border-width"]
+    || !!style["border-radius"]
+    || !!style["padding"]
+    || !!style["padding-left"]
+    || !!style["padding-right"]
+    || !!style["padding-top"]
+    || !!style["padding-bottom"];
+}
+
 function sameInlineStyle(a: ParsedInlineSegment, b: ParsedInlineSegment): boolean {
   if (a.href !== b.href) return false;
+  if (!!a.inlineBox !== !!b.inlineBox) return false;
   const aEntries = Object.entries(a.styles);
   const bEntries = Object.entries(b.styles);
   if (aEntries.length !== bEntries.length) return false;
@@ -112,6 +132,7 @@ function normalizeInlineSegments(segments: ParsedInlineSegment[]): ParsedInlineS
     } else {
       const next: ParsedInlineSegment = { text, styles: segment.styles };
       if (segment.href) next.href = segment.href;
+      if (segment.inlineBox) next.inlineBox = true;
       normalized.push(next);
     }
   }
@@ -122,29 +143,39 @@ function normalizeInlineSegments(segments: ParsedInlineSegment[]): ParsedInlineS
   return normalized.filter((segment) => segment.text);
 }
 
-function parseInlineSegments(node: AnyNode, rules: CssRule[], inherited: Record<string, string> = {}): ParsedInlineSegment[] {
+function parseInlineSegments(node: AnyNode, rules: CssRule[], inherited: Record<string, string> = {}, inheritedInlineBox = false): ParsedInlineSegment[] {
   if (node.type === "text") {
     const text = node.data ?? "";
-    return text ? [{ text, styles: inherited }] : [];
+    if (!text) return [];
+    const segment: ParsedInlineSegment = { text, styles: inherited };
+    if (inheritedInlineBox) segment.inlineBox = true;
+    return [segment];
   }
   if (!("children" in node) || !node.children) return [];
-  if (isElement(node) && node.name.toLowerCase() === "br") return [{ text: "\n", styles: inherited }];
+  if (isElement(node) && node.name.toLowerCase() === "br") {
+    const segment: ParsedInlineSegment = { text: "\n", styles: inherited };
+    if (inheritedInlineBox) segment.inlineBox = true;
+    return [segment];
+  }
 
   let style = inherited;
   let href: string | undefined;
+  let inlineBox = inheritedInlineBox;
   if (isElement(node)) {
     const name = node.name.toLowerCase();
-    style = mergeStyle(inherited, resolveElementStyle(node, rules));
+    const ownStyle = resolveElementStyle(node, rules);
+    style = mergeStyle(inherited, ownStyle);
     if (name === "strong" || name === "b") style = mergeStyle(style, { "font-weight": "700" });
     if (name === "em" || name === "i") style = mergeStyle(style, { "font-style": "italic" });
     if (name === "u") style = mergeStyle(style, { "text-decoration": "underline" });
     if (name === "s" || name === "del") style = mergeStyle(style, { "text-decoration": "line-through" });
     if (name === "code") style = mergeStyle(style, { "font-family": "monospace", "background-color": style["background-color"] ?? "#f6f8fa" });
+    inlineBox = inlineBox || (isInlineBoxElement(name) && (name === "code" || hasInlineBoxStyle(ownStyle)));
     if (style["display"]?.trim().toLowerCase() === "none" || style["visibility"]?.trim().toLowerCase() === "hidden") return [];
     if (name === "a") href = attr(node, "href").trim() || undefined;
   }
 
-  const segments = node.children.flatMap((child) => parseInlineSegments(child, rules, style));
+  const segments = node.children.flatMap((child) => parseInlineSegments(child, rules, style, inlineBox));
   if (!href) return segments;
   return segments.map((segment) => ({ ...segment, href: segment.href ?? href }));
 }

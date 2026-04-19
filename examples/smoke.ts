@@ -295,6 +295,26 @@ if (productionLoaded.getPageCount() !== productionLayout.pages) {
 }
 console.log({ name: "production-layout-controls", pages: productionLayout.pages, bytes: productionLayout.pdf.byteLength, warnings: productionLayout.warnings.length });
 
+const inlineBadges = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    p { font-size: 11px; line-height: 1.5; text-align: center; }
+    .badge { display: inline-block; padding: 3px 7px; border-radius: 999px; font-size: 8px; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+    .ok { background-color: #dcfce7; color: #14532d; border: 1px solid #86efac; }
+    .warn { background-color: #fff7ed; color: #9a3412; border: 1px dashed #fdba74; }
+    table { width: 100%; border-collapse: collapse; }
+    td { border: 1px solid #bbb; padding: 8px; vertical-align: middle; }
+  </style></head><body>
+    <p>Inline <span class="badge ok">approved</span> and <span class="badge warn">review</span> badges.</p>
+    <table><tbody><tr><td>Cell status</td><td><span class="badge ok">paid</span> with text wrap</td></tr></tbody></table>
+  </body></html>`,
+  hideHeader: true,
+});
+const inlineBadgesLoaded = await PDFDocument.load(inlineBadges.pdf);
+if (inlineBadgesLoaded.getPageCount() !== inlineBadges.pages) {
+  throw new Error("inline badges: reported page count mismatch");
+}
+console.log({ name: "inline-badges", pages: inlineBadges.pages, bytes: inlineBadges.pdf.byteLength, warnings: inlineBadges.warnings.length });
+
 await assertPdf("document-blocks", `<!doctype html><html><body>
   <style>
     .quote { background-color: #f6f8fa; border-color: #94a3b8; }

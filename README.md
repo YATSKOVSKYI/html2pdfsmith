@@ -41,6 +41,7 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 - page headers, page footers, and streaming page numbers
 - document headings, paragraphs, div/section text blocks, lists, blockquotes, pre/code blocks, links, horizontal rules
 - inline rich text: `strong`, `b`, `em`, `i`, `u`, `s`, `del`, `span style`, `a href`, `code`
+- inline badges/chips with `display: inline-block`, padding, borders, rounded backgrounds, and text transforms
 - block boxes with margins, padding, borders, background colors, and line-height
 - tables with repeated headers, horizontal wide-table pagination, `thead`, `tbody`, `tfoot`, `colspan`, and basic `rowspan`
 - table CSS: `border`, `border-width`, `border-color`, `padding`, `border-collapse: collapse`
@@ -50,6 +51,7 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 - table layout controls: `colgroup`, `table-layout: fixed`, `white-space`, `text-overflow: ellipsis`
 - per-side borders: `border-top`, `border-right`, `border-bottom`, `border-left`, dashed and dotted lines
 - visual CSS: `background-image`, `background-size`, `background-position`, `background-repeat`, `border-radius`, `box-shadow`, `text-transform`
+- inline visual CSS: `display: inline-block`, `padding`, `border`, `border-radius`, `background-color`
 - print CSS: `@media print` / `@media all` rules are applied, `@media screen` rules are ignored
 - content-aware `table-layout: auto` for tables without explicit `colgroup` widths
 - image support for PNG, JPEG, SVG, data URLs, local files, and HTTP(S) URLs
@@ -281,6 +283,7 @@ The CSS support is intentionally pragmatic:
 - `font-weight`
 - `font-style: italic`
 - `color`
+- `display: inline-block` and `display: inline-flex` for inline spans/chips
 - `background-color`
 - `background-image: url(...)`
 - `background-size: cover`, `background-size: contain`, `background-size: auto`, and explicit sizes such as `32px 32px`
@@ -306,6 +309,7 @@ The CSS support is intentionally pragmatic:
 - `width`, `height` for images and tables
 - `height`, `min-height` for table rows and cells
 - `border-radius` for text boxes and table cells
+- `padding`, `border`, `border-radius`, and `background-color` for inline `span` badges/chips
 - simplified `box-shadow` for text boxes and table cells
 - `object-fit: contain`, `object-fit: cover`, `object-fit: fill` for images in table cells
 - `object-position` keywords such as `left top`, `center center`, `right bottom`
@@ -665,6 +669,7 @@ bun run example:transform
 bun run example:layout
 bun run example:visual-css
 bun run example:production-layout
+bun run example:inline-badges
 bun run example:document
 bun run bench -- 10 100 --watermark
 ```

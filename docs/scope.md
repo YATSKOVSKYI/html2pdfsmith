@@ -27,6 +27,7 @@
 - horizontal and vertical cell alignment
 - text wrapping
 - nowrap, pre-line/pre-wrap, and ellipsis text overflow
+- inline badges/chips with `display: inline-block`, padding, borders, rounded backgrounds, and text transforms
 - print media rules with `@media print` / `@media all`
 - overflow clipping for rounded cell/block content
 - row-level pagination with rowspan group avoidance

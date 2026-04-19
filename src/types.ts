@@ -191,6 +191,7 @@ export interface ParsedInlineSegment {
   text: string;
   styles: Record<string, string>;
   href?: string;
+  inlineBox?: boolean;
 }
 
 export type ParsedBlock =

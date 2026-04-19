@@ -126,6 +126,31 @@ interface BoxShadow {
   opacity: number;
 }
 
+interface InlineLayoutItem {
+  segment: ParsedInlineSegment;
+  text: string;
+  font: string;
+  size: number;
+  color: string;
+  width: number;
+  height: number;
+  textWidth: number;
+  padding: BoxSpacing;
+  border: BorderStyle;
+  radius: number;
+  background?: string;
+  link?: string;
+  decoration: string;
+  boxed: boolean;
+  whitespace: boolean;
+}
+
+interface InlineLayoutLine {
+  items: InlineLayoutItem[];
+  width: number;
+  height: number;
+}
+
 interface TextBoxStyle {
   margin: BoxSpacing;
   padding: BoxSpacing;
@@ -1248,6 +1273,26 @@ function isOverflowHidden(style: StyleMap): boolean {
   return (style["overflow"] ?? "").trim().toLowerCase() === "hidden";
 }
 
+function hasInlineBoxStyle(segment: ParsedInlineSegment): boolean {
+  if (!segment.inlineBox) return false;
+  const display = (segment.styles["display"] ?? "").trim().toLowerCase();
+  return display === "inline-block"
+    || display === "inline-flex"
+    || !!segment.styles["background-color"]
+    || !!segment.styles["border"]
+    || !!segment.styles["border-width"]
+    || !!segment.styles["border-radius"]
+    || !!segment.styles["padding"]
+    || !!segment.styles["padding-left"]
+    || !!segment.styles["padding-right"]
+    || !!segment.styles["padding-top"]
+    || !!segment.styles["padding-bottom"];
+}
+
+function needsManualInlineLayout(inlines: ParsedInlineSegment[]): boolean {
+  return inlines.some((segment) => hasInlineBoxStyle(segment));
+}
+
 function breakLongToken(doc: PdfKitDocument, font: string, size: number, token: string, width: number): string {
   doc.font(font).fontSize(size);
   if (doc.widthOfString(token) <= width) return token;
@@ -1311,9 +1356,202 @@ function displayInlineSegments(
   return wrappedInlineSegments(ctx, base, fallbackFont, fallbackSize, width);
 }
 
+function inlineBoxPadding(styles: StyleMap): BoxSpacing {
+  return boxPxToPt(parseBoxSpacing(styles, "padding", { top: 0, right: 0, bottom: 0, left: 0 }));
+}
+
+function inlineBoxBorder(styles: StyleMap): BorderStyle {
+  return borderPxToPt(parseBorderStyle(styles, { width: 0, color: COLORS.border, style: "solid" }));
+}
+
+function inlineItem(
+  ctx: StreamContext,
+  segment: ParsedInlineSegment,
+  text: string,
+  fallbackFont: string,
+  fallbackSize: number,
+  fallbackColor: string,
+  boxed: boolean,
+  whitespace: boolean,
+): InlineLayoutItem {
+  const font = inlineFont(ctx, segment, fallbackFont);
+  const size = inlineSize(segment, fallbackSize);
+  const padding = boxed ? inlineBoxPadding(segment.styles) : { top: 0, right: 0, bottom: 0, left: 0 };
+  const border = boxed ? inlineBoxBorder(segment.styles) : { width: 0, style: "none" as const };
+  const background = parseCssColor(segment.styles["background-color"]);
+  const textValue = applyTextTransform(text, segment.styles);
+  ctx.doc.font(font).fontSize(size);
+  const textWidth = ctx.doc.widthOfString(textValue);
+  const textHeight = ctx.doc.heightOfString(textValue || " ", { width: Math.max(1, textWidth + 2), lineBreak: false });
+  const width = textWidth + padding.left + padding.right + border.width * 2;
+  const height = Math.max(size * 1.15, textHeight) + padding.top + padding.bottom + border.width * 2;
+  const item: InlineLayoutItem = {
+    segment,
+    text: textValue,
+    font,
+    size,
+    color: inlineColor(segment, fallbackColor),
+    width,
+    height,
+    textWidth,
+    padding,
+    border,
+    radius: boxed ? borderRadiusPt(segment.styles, width, height) : 0,
+    decoration: (segment.styles["text-decoration"] ?? "").toLowerCase(),
+    boxed,
+    whitespace,
+  };
+  if (background) item.background = background;
+  if (segment.href) item.link = segment.href;
+  return item;
+}
+
+function inlineItemWithText(ctx: StreamContext, item: InlineLayoutItem, text: string): InlineLayoutItem {
+  ctx.doc.font(item.font).fontSize(item.size);
+  const textWidth = ctx.doc.widthOfString(text);
+  const textHeight = ctx.doc.heightOfString(text || " ", { width: Math.max(1, textWidth + 2), lineBreak: false });
+  const width = textWidth + item.padding.left + item.padding.right + item.border.width * 2;
+  const height = Math.max(item.size * 1.15, textHeight) + item.padding.top + item.padding.bottom + item.border.width * 2;
+  return {
+    ...item,
+    text,
+    width,
+    height,
+    textWidth,
+    radius: item.boxed ? borderRadiusPt(item.segment.styles, width, height) : 0,
+  };
+}
+
+function inlineLayoutItems(
+  ctx: StreamContext,
+  inlines: ParsedInlineSegment[],
+  fallbackFont: string,
+  fallbackSize: number,
+  fallbackColor: string,
+  noWrap: boolean,
+): InlineLayoutItem[] {
+  const items: InlineLayoutItem[] = [];
+  for (const segment of inlines) {
+    const boxed = hasInlineBoxStyle(segment);
+    const text = segment.text;
+    if (boxed || noWrap) {
+      items.push(inlineItem(ctx, segment, text, fallbackFont, fallbackSize, fallbackColor, boxed, false));
+      continue;
+    }
+    for (const part of text.split(/(\s+)/)) {
+      if (!part) continue;
+      items.push(inlineItem(ctx, segment, part, fallbackFont, fallbackSize, fallbackColor, false, /^\s+$/.test(part)));
+    }
+  }
+  return items;
+}
+
+function layoutInlineLines(ctx: StreamContext, items: InlineLayoutItem[], width: number, noWrap: boolean): InlineLayoutLine[] {
+  const lines: InlineLayoutLine[] = [];
+  let current: InlineLayoutItem[] = [];
+  let currentWidth = 0;
+  let currentHeight = 0;
+
+  const flush = () => {
+    while (current[0]?.whitespace) {
+      currentWidth -= current[0].width;
+      current.shift();
+    }
+    while (current[current.length - 1]?.whitespace) {
+      currentWidth -= current[current.length - 1]!.width;
+      current.pop();
+    }
+    if (current.length > 0) lines.push({ items: current, width: Math.max(0, currentWidth), height: Math.max(1, currentHeight) });
+    current = [];
+    currentWidth = 0;
+    currentHeight = 0;
+  };
+
+  for (const item of items) {
+    if (!noWrap && item.text.includes("\n")) {
+      const parts = item.text.split("\n");
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i]) {
+          const next = inlineItemWithText(ctx, item, parts[i]!);
+          next.whitespace = false;
+          current.push(next);
+          currentWidth += next.width;
+          currentHeight = Math.max(currentHeight, next.height);
+        }
+        if (i < parts.length - 1) flush();
+      }
+      continue;
+    }
+    if (!noWrap && !item.whitespace && current.length > 0 && currentWidth + item.width > width) flush();
+    if (!noWrap && item.whitespace && current.length === 0) continue;
+    current.push(item);
+    currentWidth += item.width;
+    currentHeight = Math.max(currentHeight, item.height);
+  }
+  flush();
+  return lines.length > 0 ? lines : [{ items: [], width: 0, height: fallbackLineHeight(items) }];
+}
+
+function fallbackLineHeight(items: InlineLayoutItem[]): number {
+  return Math.max(1, ...items.map((item) => item.height));
+}
+
+function inlineManualHeight(
+  ctx: StreamContext,
+  inlines: ParsedInlineSegment[],
+  fallbackFont: string,
+  fallbackSize: number,
+  fallbackColor: string,
+  width: number,
+  noWrap: boolean,
+): number {
+  const items = inlineLayoutItems(ctx, inlines, fallbackFont, fallbackSize, fallbackColor, noWrap);
+  return layoutInlineLines(ctx, items, width, noWrap).reduce((sum, line) => sum + line.height, 0);
+}
+
+function drawManualInlineText(
+  ctx: StreamContext,
+  inlines: ParsedInlineSegment[],
+  x: number,
+  y: number,
+  width: number,
+  fallbackFont: string,
+  fallbackSize: number,
+  fallbackColor: string,
+  align: "left" | "center" | "right",
+  noWrap: boolean,
+): void {
+  const items = inlineLayoutItems(ctx, inlines, fallbackFont, fallbackSize, fallbackColor, noWrap);
+  const lines = layoutInlineLines(ctx, items, width, noWrap);
+  let cursorY = y;
+  for (const line of lines) {
+    let cursorX = align === "right" ? x + width - line.width : align === "center" ? x + (width - line.width) / 2 : x;
+    for (const item of line.items) {
+      const itemY = cursorY + (line.height - item.height) / 2;
+      if (item.background) fillBox(ctx, cursorX, itemY, item.width, item.height, item.background, item.radius);
+      strokeBox(ctx, cursorX, itemY, item.width, item.height, item.border, item.radius);
+      ctx.doc
+        .font(item.font)
+        .fontSize(item.size)
+        .fillColor(item.color)
+        .text(item.text, cursorX + item.border.width + item.padding.left, itemY + item.border.width + item.padding.top, {
+          width: Math.max(1, item.textWidth + 2),
+          lineBreak: false,
+          continued: false,
+          underline: item.decoration.includes("underline"),
+          strike: item.decoration.includes("line-through"),
+          link: item.link,
+        });
+      cursorX += item.width;
+    }
+    cursorY += line.height;
+  }
+}
+
 function inlineTextHeight(ctx: StreamContext, text: string, inlines: ParsedInlineSegment[], fallbackFont: string, fallbackSize: number, width: number, lineGap: number, noWrap = false): number {
   const maxSize = Math.max(fallbackSize, ...inlines.map((segment) => inlineSize(segment, fallbackSize)));
   const source = inlines.length > 0 ? inlines : [{ text, styles: {} }];
+  if (needsManualInlineLayout(source)) return inlineManualHeight(ctx, source, fallbackFont, fallbackSize, COLORS.text, width, noWrap);
   const wrappedText = (noWrap ? source : wrappedInlineSegments(ctx, source, fallbackFont, fallbackSize, width)).map((segment) => segment.text).join("");
   ctx.doc.font(fallbackFont).fontSize(maxSize);
   return ctx.doc.heightOfString(wrappedText || " ", { width: noWrap ? 100000 : width, lineGap, lineBreak: !noWrap });
@@ -1334,6 +1572,10 @@ function drawInlineText(
   noWrap = false,
 ): void {
   const source = inlines.length > 0 ? inlines : [{ text, styles: {} }];
+  if (needsManualInlineLayout(source)) {
+    drawManualInlineText(ctx, source, x, y, width, fallbackFont, fallbackSize, fallbackColor, align, noWrap);
+    return;
+  }
   const segments = noWrap ? source : wrappedInlineSegments(ctx, source, fallbackFont, fallbackSize, width);
   const noWrapWidth = noWrap
     ? Math.max(1, segments.reduce((sum, segment) => {
