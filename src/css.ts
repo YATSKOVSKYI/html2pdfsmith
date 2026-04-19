@@ -46,6 +46,46 @@ function stripCssComments(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
+function matchingBraceIndex(css: string, openIndex: number): number {
+  let depth = 0;
+  for (let i = openIndex; i < css.length; i++) {
+    const char = css[i];
+    if (char === "{") depth += 1;
+    else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function mediaAppliesToPrint(query: string): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  if (normalized.includes("not print")) return false;
+  if (normalized.includes("screen") && !normalized.includes("print")) return false;
+  return normalized.includes("print") || normalized.includes("all");
+}
+
+function printCss(css: string): string {
+  let out = "";
+  let cursor = 0;
+  const mediaRe = /@media\s+([^{]+)\{/gi;
+  let match: RegExpExecArray | null;
+  while ((match = mediaRe.exec(css))) {
+    const start = match.index;
+    const open = mediaRe.lastIndex - 1;
+    const close = matchingBraceIndex(css, open);
+    if (close < 0) break;
+    out += css.slice(cursor, start);
+    if (mediaAppliesToPrint(match[1] ?? "")) out += css.slice(open + 1, close);
+    cursor = close + 1;
+    mediaRe.lastIndex = close + 1;
+  }
+  out += css.slice(cursor);
+  return out;
+}
+
 function specificity(selector: string): number {
   let score = 0;
   score += (selector.match(/#/g) ?? []).length * 100;
@@ -56,7 +96,7 @@ function specificity(selector: string): number {
 
 export function parseCssRules(css: string): CssRule[] {
   const rules: CssRule[] = [];
-  const cleaned = stripCssComments(css).replace(/@media[^{]*\{([\s\S]*)\}\s*/g, "$1");
+  const cleaned = printCss(stripCssComments(css));
   const re = /([^{}]+)\{([^{}]*)\}/g;
   let match: RegExpExecArray | null;
   let order = 0;
@@ -87,7 +127,7 @@ function parseFontFaceSrcs(src: string | undefined): string[] {
 
 export function parseCssFontFaces(css: string): CssFontFaceRule[] {
   const faces: CssFontFaceRule[] = [];
-  const cleaned = stripCssComments(css);
+  const cleaned = printCss(stripCssComments(css));
   const re = /@font-face\s*\{([^{}]*)\}/gi;
   let match: RegExpExecArray | null;
   while ((match = re.exec(cleaned))) {
@@ -120,7 +160,7 @@ function parsePageSize(value: string | undefined): Pick<ParsedPageRule, "size" |
 }
 
 export function parseCssPageRule(css: string): ParsedPageRule | undefined {
-  const cleaned = stripCssComments(css);
+  const cleaned = printCss(stripCssComments(css));
   const match = /@page(?:\s+[^{:]+|\s*)\{([^{}]*)\}/i.exec(cleaned);
   if (!match?.[1]) return undefined;
   const declarations = parseStyleDeclarations(match[1]);

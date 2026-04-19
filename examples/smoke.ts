@@ -270,6 +270,31 @@ if (visualLoaded.getPageCount() !== visualCss.pages) {
 }
 console.log({ name: "visual-css-controls", pages: visualCss.pages, bytes: visualCss.pdf.byteLength, warnings: visualCss.warnings.length });
 
+const productionLayout = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @media screen { h1 { color: red; } .screen-only { display: block; } }
+    @media print { h1 { color: #102a43; text-transform: uppercase; } .screen-only { display: none; } .print-only { display: block; } }
+    .print-only { border-radius: 6px; overflow: hidden; background-color: #eef6ff; padding: 8px; box-shadow: 0 3px 8px rgba(0,0,0,.18); }
+    table { width: 100%; table-layout: auto; border-collapse: collapse; }
+    th, td { border: 1px solid #bbb; padding: 6px; }
+    .sku { white-space: nowrap; }
+    .name { overflow-wrap: break-word; }
+    .clip { border-radius: 8px; overflow: hidden; background-color: #dcfce7; text-transform: uppercase; }
+  </style></head><body>
+    <h1>production layout</h1>
+    <p class="screen-only">screen only</p>
+    <div class="print-only">print only</div>
+    <table><thead><tr><th>ID</th><th>SKU</th><th>Name</th><th>Status</th></tr></thead>
+      <tbody><tr><td>1</td><td class="sku">SKU-LONG-00001</td><td class="name">Long content-driven column title</td><td class="clip">approved status</td></tr></tbody></table>
+  </body></html>`,
+  hideHeader: true,
+});
+const productionLoaded = await PDFDocument.load(productionLayout.pdf);
+if (productionLoaded.getPageCount() !== productionLayout.pages) {
+  throw new Error("production layout: reported page count mismatch");
+}
+console.log({ name: "production-layout-controls", pages: productionLayout.pages, bytes: productionLayout.pdf.byteLength, warnings: productionLayout.warnings.length });
+
 await assertPdf("document-blocks", `<!doctype html><html><body>
   <style>
     .quote { background-color: #f6f8fa; border-color: #94a3b8; }

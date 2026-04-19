@@ -50,6 +50,8 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 - table layout controls: `colgroup`, `table-layout: fixed`, `white-space`, `text-overflow: ellipsis`
 - per-side borders: `border-top`, `border-right`, `border-bottom`, `border-left`, dashed and dotted lines
 - visual CSS: `background-image`, `background-size`, `background-position`, `background-repeat`, `border-radius`, `box-shadow`, `text-transform`
+- print CSS: `@media print` / `@media all` rules are applied, `@media screen` rules are ignored
+- content-aware `table-layout: auto` for tables without explicit `colgroup` widths
 - image support for PNG, JPEG, SVG, data URLs, local files, and HTTP(S) URLs
 - PNG/JPEG natural aspect-ratio handling when only width or height is provided
 - text and image watermarks
@@ -273,6 +275,7 @@ Unsupported elements are traversed when possible. Unsupported CSS is ignored rat
 The CSS support is intentionally pragmatic:
 
 - selector support: tag, class, id, combined simple selectors, and descendant selectors such as `table td`
+- print media support through `@media print` and `@media all`
 - `font-family` for registered, bundled, and Google Fonts
 - `font-size`
 - `font-weight`
@@ -298,6 +301,7 @@ The CSS support is intentionally pragmatic:
 - `text-decoration`
 - `border-collapse: collapse`
 - `table-layout: fixed`
+- `table-layout: auto` with content-based column width estimation
 - `colgroup` / `col style="width: ..."` for table column widths
 - `width`, `height` for images and tables
 - `height`, `min-height` for table rows and cells
@@ -310,6 +314,7 @@ The CSS support is intentionally pragmatic:
 - `transform-origin` and `-webkit-transform-origin` for image transforms
 - `display: none`
 - `visibility: hidden`
+- `overflow: hidden` for rounded/clipped boxes and table-cell content
 - `page-break-before`, `page-break-after`, `break-before`, `break-after`
 - CSS `@page { size: A4 landscape; margin: 8mm }`
 - CSS `@font-face { font-family: ...; src: url(...) }` for custom fonts loaded from external stylesheets
@@ -659,6 +664,7 @@ bun run example:alignment
 bun run example:transform
 bun run example:layout
 bun run example:visual-css
+bun run example:production-layout
 bun run example:document
 bun run bench -- 10 100 --watermark
 ```

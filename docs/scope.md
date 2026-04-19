@@ -19,6 +19,7 @@
 - large tables with many columns
 - horizontal wide-table pagination with repeated left columns
 - fixed table layout with `colgroup` column widths
+- content-aware automatic table layout
 - cell background colors for highlights
 - cell and block background images
 - rounded cells/blocks and simplified shadows
@@ -26,6 +27,8 @@
 - horizontal and vertical cell alignment
 - text wrapping
 - nowrap, pre-line/pre-wrap, and ellipsis text overflow
+- print media rules with `@media print` / `@media all`
+- overflow clipping for rounded cell/block content
 - row-level pagination with rowspan group avoidance
 - PNG/JPEG images
 - text and image watermarks

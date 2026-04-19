@@ -214,10 +214,77 @@ function computeColumnWidthsFromStyles(table: ParsedTable, contentWidth: number)
   return widths.map((value) => Math.max(1, value ?? fallback));
 }
 
-function computeTableColumnWidths(table: ParsedTable, contentWidth: number, style: TableRenderStyle): number[] {
+function plainInlineText(text: string, inlines: ParsedInlineSegment[], style: StyleMap): string {
+  const source = inlines.length > 0 ? inlines : [{ text, styles: style }];
+  return source.map((segment) => applyTextTransform(segment.text, { ...style, ...segment.styles })).join("");
+}
+
+function measureCellWidth(ctx: StreamContext, cell: ParsedCell, row: ParsedRow, contentWidth: number): { min: number; preferred: number } {
+  if (cell.isSpanPlaceholder) return { min: 0, preferred: 0 };
+  const font = fontForCell(ctx, cell, row);
+  const size = sizeForCell(ctx, cell, row);
+  const padding = cellPadding(ctx, cell);
+  const text = plainInlineText(cell.text, cell.inlines, { ...row.styles, ...cell.styles }).replace(/\s+/g, " ").trim();
+  ctx.doc.font(font).fontSize(size);
+  const lines = text ? text.split(/\n+/) : [""];
+  const preferredText = Math.max(0, ...lines.map((line) => ctx.doc.widthOfString(line)));
+  const tokens = text.split(/\s+/).filter(Boolean);
+  const longestToken = Math.max(0, ...tokens.map((token) => ctx.doc.widthOfString(token)));
+  const noWrap = isNoWrapStyle({ ...row.styles, ...cell.styles });
+  const ellipsis = wantsEllipsis({ ...row.styles, ...cell.styles });
+  const imageWidth = cell.imageSrc
+    ? cssLengthPt(cell.imageStyles?.["width"], contentWidth) ?? Math.min(48, contentWidth)
+    : 0;
+  const preferred = Math.max(preferredText, imageWidth) + padding.left + padding.right;
+  const min = Math.max(noWrap && !ellipsis ? preferredText : ellipsis ? Math.min(preferredText, 48) : longestToken, imageWidth * 0.65, 18) + padding.left + padding.right;
+  return { min, preferred: Math.max(min, preferred) };
+}
+
+function normalizeAutoWidths(minWidths: number[], preferredWidths: number[], contentWidth: number): number[] {
+  const minTotal = minWidths.reduce((sum, value) => sum + value, 0);
+  const preferredTotal = preferredWidths.reduce((sum, value) => sum + value, 0);
+  if (preferredTotal <= 0) return computeColumnWidths(minWidths.length, contentWidth);
+  if (preferredTotal <= contentWidth) {
+    const extra = contentWidth - preferredTotal;
+    return preferredWidths.map((value) => Math.max(1, value + extra * (value / preferredTotal)));
+  }
+  if (minTotal >= contentWidth) {
+    const scale = contentWidth / Math.max(1, minTotal);
+    return minWidths.map((value) => Math.max(1, value * scale));
+  }
+  const shrinkable = Math.max(1, preferredTotal - minTotal);
+  const ratio = (contentWidth - minTotal) / shrinkable;
+  return preferredWidths.map((preferred, index) => minWidths[index]! + (preferred - minWidths[index]!) * ratio);
+}
+
+function computeAutoColumnWidths(ctx: StreamContext, table: ParsedTable, contentWidth: number): number[] {
+  const minWidths = Array.from({ length: table.columnCount }, () => 18);
+  const preferredWidths = Array.from({ length: table.columnCount }, () => 24);
+
+  for (const row of [...table.headRows, ...table.bodyRows]) {
+    let col = 0;
+    for (const cell of row.cells) {
+      const span = Math.max(1, cell.colspan);
+      if (!cell.isSpanPlaceholder && row.kind !== "section") {
+        const measured = measureCellWidth(ctx, cell, row, contentWidth);
+        const shareMin = measured.min / span;
+        const sharePreferred = measured.preferred / span;
+        for (let i = col; i < Math.min(table.columnCount, col + span); i++) {
+          minWidths[i] = Math.max(minWidths[i]!, shareMin);
+          preferredWidths[i] = Math.max(preferredWidths[i]!, sharePreferred);
+        }
+      }
+      col += span;
+    }
+  }
+
+  return normalizeAutoWidths(minWidths, preferredWidths, contentWidth);
+}
+
+function computeTableColumnWidths(ctx: StreamContext, table: ParsedTable, contentWidth: number, style: TableRenderStyle): number[] {
   if ((table.columnStyles?.length ?? 0) > 0) return computeColumnWidthsFromStyles(table, contentWidth);
   if (style.layout === "fixed") return Array.from({ length: table.columnCount }, () => contentWidth / table.columnCount);
-  return computeColumnWidths(table.columnCount, contentWidth);
+  return computeAutoColumnWidths(ctx, table, contentWidth);
 }
 
 function pxToPt(value: number): number {
@@ -1177,6 +1244,10 @@ function wantsEllipsis(style: StyleMap): boolean {
   return (style["text-overflow"] ?? "").trim().toLowerCase() === "ellipsis";
 }
 
+function isOverflowHidden(style: StyleMap): boolean {
+  return (style["overflow"] ?? "").trim().toLowerCase() === "hidden";
+}
+
 function breakLongToken(doc: PdfKitDocument, font: string, size: number, token: string, width: number): string {
   doc.font(font).fontSize(size);
   if (doc.widthOfString(token) <= width) return token;
@@ -1340,7 +1411,12 @@ async function drawTextBlock(ctx: StreamContext, block: Extract<ParsedBlock, { t
     ctx.doc.rect(boxX, ctx.y, Math.max(2, pxToPt(border.width)), boxHeight).fill(border.color ?? COLORS.border);
   }
 
+  ctx.doc.save();
+  if (isOverflowHidden(block.style) || radius > 0) {
+    clipBox(ctx, contentX, ctx.y + box.border.width + box.padding.top, contentWidth, Math.max(1, boxHeight - box.border.width * 2 - box.padding.top - box.padding.bottom), Math.max(0, radius - Math.max(box.padding.left, box.padding.top)));
+  }
   drawInlineText(ctx, displayText, displayInlines, contentX, ctx.y + box.border.width + box.padding.top, contentWidth, font, size, blockColor(block), lineGap, block.style["text-align"] === "center" || block.style["text-align"] === "right" ? block.style["text-align"] as "center" | "right" : "left");
+  ctx.doc.restore();
   ctx.y += boxHeight + box.margin.bottom;
 }
 
@@ -1564,7 +1640,8 @@ async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promi
     const textBlockHeight = inlineTextHeight(ctx, cell.text, displayInlines, font, size, contentWidth, lineGap, noWrap);
     const textY = verticalContentY(contentY, contentHeight, textBlockHeight, verticalAlign);
     ctx.doc.save();
-    ctx.doc.rect(contentX, contentY, contentWidth, contentHeight).clip();
+    const contentRadius = isOverflowHidden(cell.styles) || radius > 0 ? Math.max(0, radius - Math.max(padding.left, padding.top)) : 0;
+    clipBox(ctx, contentX, contentY, contentWidth, contentHeight, contentRadius);
     drawInlineText(ctx, cell.text, displayInlines, contentX, textY, contentWidth, font, size, textColor, lineGap, align, noWrap);
     ctx.doc.restore();
 
@@ -1825,16 +1902,9 @@ function sliceTableByColumns(table: ParsedTable, columns: number[]): { table: Pa
     if (sliced.splitBodyColspan) splitBodyColspan = true;
     return sliced.row;
   });
-  return {
-    table: {
-      ...table,
-      headRows,
-      bodyRows,
-      columnCount: columns.length,
-      columnStyles: columns.map((column) => table.columnStyles?.[column] ?? {}),
-    },
-    splitBodyColspan,
-  };
+  const slicedTable: ParsedTable = { ...table, headRows, bodyRows, columnCount: columns.length };
+  if ((table.columnStyles?.length ?? 0) > 0) slicedTable.columnStyles = columns.map((column) => table.columnStyles?.[column] ?? {});
+  return { table: slicedTable, splitBodyColspan };
 }
 
 async function drawSingleTableBlock(ctx: StreamContext, table: ParsedTable, style: StyleMap, addTrailingGap = true): Promise<void> {
@@ -1846,7 +1916,7 @@ async function drawSingleTableBlock(ctx: StreamContext, table: ParsedTable, styl
   ctx.columns = table.columnCount;
   ctx.tableWidth = clamp(width, Math.min(previousTableWidth, 120), previousTableWidth);
   ctx.currentTableStyle = tableStyle(style);
-  ctx.columnWidths = computeTableColumnWidths(table, ctx.tableWidth, ctx.currentTableStyle);
+  ctx.columnWidths = computeTableColumnWidths(ctx, table, ctx.tableWidth, ctx.currentTableStyle);
   const repeat = shouldRepeatTableHeaders(ctx, table);
   const groups = groupRowsByRowspan(ctx, table.bodyRows);
   const firstGroup = groups[0];
