@@ -2,7 +2,7 @@ import { parseDocument } from "htmlparser2";
 import type { AnyNode, Element } from "domhandler";
 import { DomUtils } from "htmlparser2";
 import { parseCssFontFaces, parseCssPageRule, parseCssRules, resolveElementStyle, type CssRule } from "./css";
-import type { ParsedBlock, ParsedCell, ParsedDocument, ParsedFontFace, ParsedInlineSegment, ParsedRow, ParsedTable } from "./types";
+import type { ParsedBlock, ParsedCell, ParsedCellBlock, ParsedDocument, ParsedFontFace, ParsedInlineSegment, ParsedRow, ParsedTable } from "./types";
 
 function isElement(node: AnyNode | null | undefined): node is Element {
   return !!node && (node.type === "tag" || node.type === "style" || node.type === "script");
@@ -196,6 +196,124 @@ function firstImageInfo(el: Element, rules: CssRule[]): { src: string; styles: R
   return { src, styles };
 }
 
+function imageInfo(el: Element, rules: CssRule[]): { src: string; alt: string; styles: Record<string, string> } | undefined {
+  const src = attr(el, "src").trim();
+  if (!src) return undefined;
+  const styles = resolveElementStyle(el, rules);
+  const width = attr(el, "width").trim();
+  const height = attr(el, "height").trim();
+  if (width && !styles["width"]) styles["width"] = width;
+  if (height && !styles["height"]) styles["height"] = height;
+  return { src, alt: attr(el, "alt").trim(), styles };
+}
+
+function isHiddenStyle(style: Record<string, string>): boolean {
+  return style["display"]?.trim().toLowerCase() === "none" || style["visibility"]?.trim().toLowerCase() === "hidden";
+}
+
+function isRichCellContainer(name: string): boolean {
+  return name === "div" || name === "section" || name === "article" || name === "main" || name === "aside" || name === "header" || name === "footer" || name === "figure";
+}
+
+function isCellTextElement(name: string): boolean {
+  return name === "p" || name === "address" || name === "blockquote" || name === "pre" || name === "span" || name === "a" || name === "code" || name === "strong" || name === "b" || name === "em" || name === "i" || name === "u" || name === "s" || name === "del";
+}
+
+function isHeadingName(name: string): name is "h1" | "h2" | "h3" | "h4" | "h5" | "h6" {
+  return /^h[1-6]$/.test(name);
+}
+
+function inheritableStyle(style: Record<string, string>): Record<string, string> {
+  const keys = [
+    "color",
+    "font-family",
+    "font-size",
+    "font-style",
+    "font-weight",
+    "letter-spacing",
+    "line-height",
+    "text-align",
+    "text-decoration",
+    "text-transform",
+    "white-space",
+    "word-break",
+    "word-wrap",
+    "overflow-wrap",
+  ];
+  const out: Record<string, string> = {};
+  for (const key of keys) {
+    if (style[key] != null) out[key] = style[key]!;
+  }
+  return out;
+}
+
+function hasAbsoluteDescendant(el: Element, rules: CssRule[]): boolean {
+  const descendants = findAll(el, () => true);
+  return descendants.some((node) => (resolveElementStyle(node, rules)["position"] ?? "").trim().toLowerCase() === "absolute");
+}
+
+function hasRichCellContent(el: Element, rules: CssRule[]): boolean {
+  return directElementChildren(el).some((child) => {
+    const name = child.name.toLowerCase();
+    if (name === "img" || isRichCellContainer(name) || isHeadingName(name) || name === "p") return true;
+    return hasAbsoluteDescendant(child, rules);
+  });
+}
+
+function parsedTextCellBlock(el: Element, rules: CssRule[], inherited: Record<string, string>): ParsedCellBlock | undefined {
+  const inheritedText = inheritableStyle(inherited);
+  const style = mergeStyle(inheritedText, resolveElementStyle(el, rules));
+  if (isHiddenStyle(style)) return undefined;
+  const inlines = normalizeInlineSegments(parseInlineSegments(el, rules, inheritedText));
+  const text = inlineText(inlines) || normalizeWhitespace(textWithBreaks(el));
+  if (!text && inlines.length === 0) return undefined;
+  const name = el.name.toLowerCase();
+  if (isHeadingName(name)) {
+    return { type: "heading", level: Number(name[1]) as 1 | 2 | 3 | 4 | 5 | 6, text, inlines, style };
+  }
+  return { type: "text", text, inlines, style };
+}
+
+function parseCellBlocksFromChildren(nodes: AnyNode[], rules: CssRule[], inherited: Record<string, string>): ParsedCellBlock[] {
+  const blocks: ParsedCellBlock[] = [];
+  for (const child of nodes) {
+    if (child.type === "text") {
+      const text = normalizeWhitespace(child.data ?? "");
+      const style = inheritableStyle(inherited);
+      if (text) blocks.push({ type: "text", text, inlines: [{ text, styles: style }], style });
+      continue;
+    }
+    if (!isElement(child)) continue;
+    const name = child.name.toLowerCase();
+    if (name === "br") continue;
+
+    const inheritedText = inheritableStyle(inherited);
+    const style = mergeStyle(inheritedText, resolveElementStyle(child, rules));
+    if (isHiddenStyle(style)) continue;
+
+    if (name === "img") {
+      const image = imageInfo(child, rules);
+      if (image) blocks.push({ type: "image", src: image.src, alt: image.alt, style: image.styles });
+      continue;
+    }
+
+    if (isRichCellContainer(name)) {
+      blocks.push({ type: "box", blocks: parseCellBlocksFromChildren(child.children ?? [], rules, inheritableStyle(style)), className: className(child), style });
+      continue;
+    }
+
+    if (isHeadingName(name) || isCellTextElement(name)) {
+      const block = parsedTextCellBlock(child, rules, inherited);
+      if (block) blocks.push(block);
+      continue;
+    }
+
+    const nested = parseCellBlocksFromChildren(child.children ?? [], rules, inheritableStyle(style));
+    if (nested.length > 0) blocks.push({ type: "box", blocks: nested, className: className(child), style });
+  }
+  return blocks;
+}
+
 function parseIntAttr(el: Element, name: string, fallback: number): number {
   const value = Number.parseInt(attr(el, name), 10);
   return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -207,6 +325,7 @@ function parseCell(el: Element, rules: CssRule[]): ParsedCell {
   const styles = resolveElementStyle(el, rules);
   const inlines = normalizeInlineSegments(parseInlineSegments(el, rules, styles));
   const text = inlineText(inlines) || normalizeWhitespace(textWithBreaks(el));
+  const richBlocks = hasRichCellContent(el, rules) ? parseCellBlocksFromChildren(el.children ?? [], rules, styles) : [];
   const lower = `${cls} ${style} ${Object.entries(styles).map(([k, v]) => `${k}:${v}`).join(";")}`.toLowerCase();
   const isHeader = el.name.toLowerCase() === "th";
   const isPrice = /\bprice\b/.test(cls) || lower.includes("data-price");
@@ -228,9 +347,10 @@ function parseCell(el: Element, rules: CssRule[]): ParsedCell {
     isDiff,
     isSection,
   };
+  if (richBlocks.length > 0) cell.richBlocks = richBlocks;
 
   const image = firstImageInfo(el, rules);
-  if (image) {
+  if (image && richBlocks.length === 0) {
     cell.imageSrc = image.src;
     cell.imageStyles = image.styles;
   }

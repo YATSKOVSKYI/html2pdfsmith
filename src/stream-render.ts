@@ -12,6 +12,7 @@ import type {
   PdfBundledFontFace,
   ParsedBlock,
   ParsedCell,
+  ParsedCellBlock,
   ParsedDocument,
   ParsedFontFace,
   ParsedInlineSegment,
@@ -1718,6 +1719,255 @@ function sizeForCell(ctx: StreamContext, cell: ParsedCell, row: ParsedRow): numb
   return ctx.baseFontSize;
 }
 
+function fontForStyle(ctx: StreamContext, style: StyleMap, fallbackFont: string): string {
+  const family = normalizeFontFamily(style["font-family"]);
+  const weight = style["font-weight"];
+  const bold = weight === "bold" || Number(weight) >= 600;
+  const italic = (style["font-style"] ?? "").toLowerCase() === "italic";
+  if (family && ctx.fontFamilies.has(family)) {
+    const pair = ctx.fontFamilies.get(family)!;
+    if (bold && italic) return pair.boldItalic;
+    if (italic) return pair.italic;
+    if (bold) return pair.bold;
+    return pair.regular;
+  }
+  if (bold && italic) return ctx.boldItalicFontName;
+  if (italic) return ctx.italicFontName;
+  if (bold) return ctx.boldFontName;
+  return fallbackFont;
+}
+
+function cellBlockFontSize(block: ParsedCellBlock, fallbackSize: number): number {
+  if (block.type === "heading") {
+    const defaults: Record<number, number> = { 1: 18, 2: 16, 3: 14, 4: 12, 5: 10.5, 6: 10 };
+    return cssLengthPt(block.style["font-size"]) ?? defaults[block.level] ?? fallbackSize;
+  }
+  return cssLengthPt(block.style["font-size"]) ?? fallbackSize;
+}
+
+function cellBlockMargin(block: ParsedCellBlock): BoxSpacing {
+  const fallback = block.type === "heading"
+    ? { top: 0, right: 0, bottom: 6, left: 0 }
+    : block.type === "text"
+      ? { top: 0, right: 0, bottom: 4, left: 0 }
+      : block.type === "image"
+        ? { top: 0, right: 0, bottom: 6, left: 0 }
+        : { top: 0, right: 0, bottom: 0, left: 0 };
+  return spacingPt(block.style, "margin", fallback);
+}
+
+function cellBlockPadding(block: ParsedCellBlock): BoxSpacing {
+  return spacingPt(block.style, "padding", { top: 0, right: 0, bottom: 0, left: 0 });
+}
+
+function cellBlockBorder(block: ParsedCellBlock): BorderStyle {
+  return borderPxToPt(parseBorderStyle(block.style, { width: 0, color: COLORS.border, style: "solid" }));
+}
+
+function isAbsoluteBlock(block: ParsedCellBlock): boolean {
+  return (block.style["position"] ?? "").trim().toLowerCase() === "absolute";
+}
+
+function cellBlockAlign(style: StyleMap): "left" | "center" | "right" {
+  const align = (style["text-align"] ?? "").trim().toLowerCase();
+  return align === "center" || align === "right" ? align : "left";
+}
+
+function richBlockTextWidth(ctx: StreamContext, block: Extract<ParsedCellBlock, { type: "text" | "heading" }>, fallbackFont: string, fallbackSize: number): number {
+  const size = cellBlockFontSize(block, fallbackSize);
+  const font = fontForStyle(ctx, block.style, block.type === "heading" ? ctx.boldFontName : fallbackFont);
+  const inlines = block.inlines.length > 0 ? block.inlines : [{ text: block.text, styles: block.style }];
+  let width = 0;
+  for (const segment of inlines) {
+    ctx.doc.font(inlineFont(ctx, segment, font)).fontSize(inlineSize(segment, size));
+    width += ctx.doc.widthOfString(applyTextTransform(segment.text, segment.styles));
+  }
+  return width;
+}
+
+function estimateRichImageHeight(ctx: StreamContext, block: Extract<ParsedCellBlock, { type: "image" }>, width: number): number {
+  const margin = cellBlockMargin(block);
+  const cssWidth = cssLengthPt(block.style["width"], width);
+  const cssHeight = cssLengthPt(block.style["height"], ctx.contentBottom - ctx.contentTop);
+  if (cssHeight != null) return margin.top + cssHeight + margin.bottom;
+  if (cssWidth != null) return margin.top + Math.min(cssWidth * 0.58, ctx.contentBottom - ctx.contentTop) + margin.bottom;
+  return margin.top + Math.min(90, width * 0.52) + margin.bottom;
+}
+
+function estimateRichBlockHeight(ctx: StreamContext, block: ParsedCellBlock, width: number, fallbackFont: string, fallbackSize: number): number {
+  if (isAbsoluteBlock(block)) return 0;
+  const margin = cellBlockMargin(block);
+  const padding = cellBlockPadding(block);
+  const border = cellBlockBorder(block);
+  const availableWidth = Math.max(8, width - margin.left - margin.right);
+  const explicitWidth = cssLengthPt(block.style["width"], availableWidth);
+  const boxWidth = Math.max(8, explicitWidth ?? availableWidth);
+  const explicitHeight = styleBoxHeight(block.style, ctx.contentBottom - ctx.contentTop);
+
+  if (block.type === "image") {
+    return explicitHeight != null
+      ? margin.top + explicitHeight + margin.bottom
+      : estimateRichImageHeight(ctx, block, availableWidth);
+  }
+
+  if (block.type === "box") {
+    if (explicitHeight != null) return margin.top + explicitHeight + margin.bottom;
+    const innerWidth = Math.max(8, boxWidth - padding.left - padding.right - border.width * 2);
+    const childHeight = block.blocks.reduce((sum, child) => sum + estimateRichBlockHeight(ctx, child, innerWidth, fallbackFont, fallbackSize), 0);
+    return margin.top + childHeight + padding.top + padding.bottom + border.width * 2 + margin.bottom;
+  }
+
+  const size = cellBlockFontSize(block, fallbackSize);
+  const font = fontForStyle(ctx, block.style, block.type === "heading" ? ctx.boldFontName : fallbackFont);
+  const contentWidth = Math.max(8, boxWidth - padding.left - padding.right - border.width * 2);
+  const lineGap = lineGapForStyle(block.style, size, 0.18);
+  const noWrap = isNoWrapStyle(block.style);
+  const displayInlines = displayInlineSegments(ctx, block.text, block.inlines, font, size, contentWidth, block.style);
+  const textHeightValue = inlineTextHeight(ctx, block.text, displayInlines, font, size, contentWidth, lineGap, noWrap);
+  return margin.top + (explicitHeight ?? textHeightValue + padding.top + padding.bottom + border.width * 2) + margin.bottom;
+}
+
+function estimateRichCellHeight(ctx: StreamContext, cell: ParsedCell, width: number, fallbackFont: string, fallbackSize: number): number {
+  if (!cell.richBlocks?.length) return 0;
+  return cell.richBlocks.reduce((sum, block) => sum + estimateRichBlockHeight(ctx, block, width, fallbackFont, fallbackSize), 0);
+}
+
+function drawRichBlockBox(ctx: StreamContext, style: StyleMap, x: number, y: number, width: number, height: number, border: BorderStyle, padding: BoxSpacing): number {
+  const radius = borderRadiusPt(style, width, height);
+  drawBoxShadow(ctx, style, x, y, width, height, radius);
+  const bg = parseCssColor(style["background-color"]);
+  if (bg) fillBox(ctx, x, y, width, height, bg, radius);
+  strokeBox(ctx, x, y, width, height, border, radius);
+  return Math.max(0, radius - Math.max(padding.left, padding.top));
+}
+
+function absoluteRichBlockRect(
+  ctx: StreamContext,
+  block: ParsedCellBlock,
+  containerX: number,
+  containerY: number,
+  containerWidth: number,
+  containerHeight: number,
+  fallbackFont: string,
+  fallbackSize: number,
+): { x: number; y: number; width: number; height: number } {
+  const margin = cellBlockMargin(block);
+  const padding = cellBlockPadding(block);
+  const border = cellBlockBorder(block);
+  const left = cssLengthPt(block.style["left"], containerWidth);
+  const right = cssLengthPt(block.style["right"], containerWidth);
+  const top = cssLengthPt(block.style["top"], containerHeight);
+  const bottom = cssLengthPt(block.style["bottom"], containerHeight);
+  let width = cssLengthPt(block.style["width"], containerWidth - margin.left - margin.right);
+  let height = styleBoxHeight(block.style, containerHeight);
+
+  if (block.type === "text" || block.type === "heading") {
+    width ??= richBlockTextWidth(ctx, block, fallbackFont, fallbackSize) + padding.left + padding.right + border.width * 2;
+  } else {
+    width ??= Math.max(12, containerWidth - margin.left - margin.right);
+  }
+  height ??= estimateRichBlockHeight(ctx, { ...block, style: { ...block.style, position: "static" } } as ParsedCellBlock, Math.max(12, width), fallbackFont, fallbackSize);
+  height = Math.max(1, height - margin.top - margin.bottom);
+
+  const x = left != null
+    ? containerX + left + margin.left
+    : right != null
+      ? containerX + containerWidth - right - width - margin.right
+      : containerX + margin.left;
+  const y = top != null
+    ? containerY + top + margin.top
+    : bottom != null
+      ? containerY + containerHeight - bottom - height - margin.bottom
+      : containerY + margin.top;
+  return { x, y, width: Math.max(1, width), height: Math.max(1, height) };
+}
+
+async function drawRichBlock(
+  ctx: StreamContext,
+  block: ParsedCellBlock,
+  x: number,
+  y: number,
+  width: number,
+  containerHeight: number,
+  fallbackFont: string,
+  fallbackSize: number,
+  fallbackColor: string,
+): Promise<number> {
+  const margin = cellBlockMargin(block);
+  const padding = cellBlockPadding(block);
+  const border = cellBlockBorder(block);
+  const availableWidth = Math.max(8, width - margin.left - margin.right);
+  const explicitWidth = cssLengthPt(block.style["width"], availableWidth);
+  const boxWidth = Math.max(8, Math.min(availableWidth, explicitWidth ?? availableWidth));
+  const drawX = cellBlockAlign(block.style) === "center"
+    ? x + margin.left + (availableWidth - boxWidth) / 2
+    : cellBlockAlign(block.style) === "right"
+      ? x + width - margin.right - boxWidth
+      : x + margin.left;
+  const drawY = y + margin.top;
+  const estimatedHeight = Math.max(1, estimateRichBlockHeight(ctx, block, width, fallbackFont, fallbackSize) - margin.top - margin.bottom);
+  const explicitHeight = styleBoxHeight(block.style, containerHeight);
+  const boxHeight = Math.max(1, explicitHeight ?? estimatedHeight);
+
+  if (block.type === "image") {
+    const asset = await getAsset(ctx, block.src);
+    if (asset) drawAssetInBox(ctx, asset, drawX, drawY, boxWidth, boxHeight, block.style, 1, "cell rich image");
+    return margin.top + boxHeight + margin.bottom;
+  }
+
+  const contentRadius = drawRichBlockBox(ctx, block.style, drawX, drawY, boxWidth, boxHeight, border, padding);
+  await drawBackgroundImage(ctx, block.style, drawX, drawY, boxWidth, boxHeight, borderRadiusPt(block.style, boxWidth, boxHeight));
+
+  if (block.type === "box") {
+    const innerX = drawX + border.width + padding.left;
+    const innerY = drawY + border.width + padding.top;
+    const innerWidth = Math.max(8, boxWidth - border.width * 2 - padding.left - padding.right);
+    const innerHeight = Math.max(1, boxHeight - border.width * 2 - padding.top - padding.bottom);
+    ctx.doc.save();
+    if (isOverflowHidden(block.style) || contentRadius > 0) clipBox(ctx, innerX, innerY, innerWidth, innerHeight, contentRadius);
+    await drawRichBlocks(ctx, block.blocks.filter((child) => !isAbsoluteBlock(child)), innerX, innerY, innerWidth, innerHeight, fallbackFont, fallbackSize, fallbackColor);
+    for (const child of block.blocks.filter(isAbsoluteBlock)) {
+      const rect = absoluteRichBlockRect(ctx, child, drawX, drawY, boxWidth, boxHeight, fallbackFont, fallbackSize);
+      await drawRichBlock(ctx, { ...child, style: { ...child.style, position: "static" } } as ParsedCellBlock, rect.x, rect.y, rect.width, rect.height, fallbackFont, fallbackSize, fallbackColor);
+    }
+    ctx.doc.restore();
+    return margin.top + boxHeight + margin.bottom;
+  }
+
+  const size = cellBlockFontSize(block, fallbackSize);
+  const font = fontForStyle(ctx, block.style, block.type === "heading" ? ctx.boldFontName : fallbackFont);
+  const textColor = parseCssColor(block.style["color"]) ?? fallbackColor;
+  const contentX = drawX + border.width + padding.left;
+  const contentY = drawY + border.width + padding.top;
+  const contentWidth = Math.max(8, boxWidth - border.width * 2 - padding.left - padding.right);
+  const contentHeight = Math.max(1, boxHeight - border.width * 2 - padding.top - padding.bottom);
+  const lineGap = lineGapForStyle(block.style, size, 0.18);
+  const noWrap = isNoWrapStyle(block.style);
+  const displayInlines = displayInlineSegments(ctx, block.text, block.inlines, font, size, contentWidth, block.style);
+  const textHeightValue = inlineTextHeight(ctx, block.text, displayInlines, font, size, contentWidth, lineGap, noWrap);
+  const textY = verticalContentY(contentY, contentHeight, textHeightValue, (block.style["vertical-align"] ?? "").trim().toLowerCase() === "middle" ? "middle" : "top");
+  drawInlineText(ctx, block.text, displayInlines, contentX, textY, contentWidth, font, size, textColor, lineGap, cellBlockAlign(block.style), noWrap);
+  return margin.top + boxHeight + margin.bottom;
+}
+
+async function drawRichBlocks(
+  ctx: StreamContext,
+  blocks: ParsedCellBlock[],
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  fallbackFont: string,
+  fallbackSize: number,
+  fallbackColor: string,
+): Promise<number> {
+  let cursorY = y;
+  for (const block of blocks) {
+    cursorY += await drawRichBlock(ctx, block, x, cursorY, width, Math.max(1, height - (cursorY - y)), fallbackFont, fallbackSize, fallbackColor);
+  }
+  return cursorY - y;
+}
+
 function styleBoxHeight(styles: StyleMap, base: number): number | undefined {
   const height = cssLengthPt(styles["height"], base);
   const minHeight = cssLengthPt(styles["min-height"], base);
@@ -1778,12 +2028,15 @@ function estimateRowHeight(ctx: StreamContext, row: ParsedRow, capToPage = true)
     const contentWidth = Math.max(12, width - padding.left - padding.right);
     const cellTextStyle = { ...row.styles, ...cell.styles };
     const noWrap = isNoWrapStyle(cellTextStyle);
-    const textContentHeight = cell.text || cell.inlines.length > 0
+    const richContentHeight = cell.richBlocks?.length
+      ? estimateRichCellHeight(ctx, cell, contentWidth, font, size)
+      : 0;
+    const textContentHeight = !cell.richBlocks?.length && (cell.text || cell.inlines.length > 0)
       ? inlineTextHeight(ctx, cell.text, cell.inlines, font, size, contentWidth, lineGap, noWrap)
       : 0;
-    const imageContentHeight = estimatedCellImageHeight(ctx, cell, contentWidth);
+    const imageContentHeight = !cell.richBlocks?.length ? estimatedCellImageHeight(ctx, cell, contentWidth) : 0;
     const cssCellHeight = styleBoxHeight(cell.styles, ctx.contentBottom - ctx.contentTop);
-    height = Math.max(height, textContentHeight + padding.top + padding.bottom, imageContentHeight + padding.top + padding.bottom, cssCellHeight ?? 0);
+    height = Math.max(height, richContentHeight + padding.top + padding.bottom, textContentHeight + padding.top + padding.bottom, imageContentHeight + padding.top + padding.bottom, cssCellHeight ?? 0);
     col += span;
   }
 
@@ -1795,25 +2048,35 @@ async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promi
   const y = ctx.y;
 
   if (row.kind === "section") {
-    const text = row.cells.find((cell) => cell.text)?.text ?? "";
-    ctx.doc.rect(ctx.margin, y, ctx.tableWidth, height).fill(COLORS.sectionBg);
     const sectionCell = row.cells.find((cell) => cell.text) ?? row.cells[0];
+    const text = sectionCell?.text ?? "";
+    const sectionPadding = sectionCell ? cellPadding(ctx, sectionCell) : { top: ctx.cellPaddingY, right: ctx.cellPaddingX, bottom: ctx.cellPaddingY, left: ctx.cellPaddingX };
+    const sectionStyle = { ...row.styles, ...(sectionCell?.styles ?? {}) };
+    const fill = parseCssColor(sectionStyle["background-color"]) ?? COLORS.sectionBg;
+    const textColor = parseCssColor(sectionStyle["color"]) ?? COLORS.sectionText;
+    const radius = sectionCell ? borderRadiusPt(sectionCell.styles, ctx.tableWidth, height) : 0;
+    if (fill) fillBox(ctx, ctx.margin, y, ctx.tableWidth, height, fill, radius);
     const sectionAlign = sectionCell ? cellVerticalAlign(sectionCell, row) : "middle";
-    const sectionWidth = Math.max(12, ctx.tableWidth - ctx.cellPaddingX * 2);
-    const sectionLineGap = lineGapForStyle(row.styles, ctx.sectionFontSize, 0.18);
-    const sectionTextHeight = inlineTextHeight(ctx, text, sectionCell?.inlines ?? [{ text, styles: {} }], ctx.boldFontName, ctx.sectionFontSize, sectionWidth, sectionLineGap);
+    const sectionWidth = Math.max(12, ctx.tableWidth - sectionPadding.left - sectionPadding.right);
+    const sectionSize = sizeForCell(ctx, sectionCell ?? row.cells[0]!, row);
+    const sectionLineGap = lineGapForStyle(sectionStyle, sectionSize, 0.18);
+    const sectionInlines = sectionCell?.inlines ?? [{ text, styles: sectionStyle }];
+    const sectionTextHeight = inlineTextHeight(ctx, text, sectionInlines, ctx.boldFontName, sectionSize, sectionWidth, sectionLineGap);
+    const textAlign = sectionStyle["text-align"] === "center" || sectionStyle["text-align"] === "right"
+      ? sectionStyle["text-align"] as "center" | "right"
+      : "left";
     drawInlineText(
       ctx,
       text,
-      sectionCell?.inlines ?? [{ text, styles: {} }],
-      ctx.margin + ctx.cellPaddingX,
-      verticalContentY(y + ctx.cellPaddingY, Math.max(1, height - ctx.cellPaddingY * 2), sectionTextHeight, sectionAlign),
+      sectionInlines,
+      ctx.margin + sectionPadding.left,
+      verticalContentY(y + sectionPadding.top, Math.max(1, height - sectionPadding.top - sectionPadding.bottom), sectionTextHeight, sectionAlign),
       sectionWidth,
       ctx.boldFontName,
-      ctx.sectionFontSize,
-      COLORS.sectionText,
+      sectionSize,
+      textColor,
       sectionLineGap,
-      "center",
+      textAlign,
     );
     ctx.y = y + height;
     return;
@@ -1860,6 +2123,20 @@ async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promi
     const contentY = y + padding.top;
     const contentWidth = Math.max(12, width - padding.left - padding.right);
     const contentHeight = Math.max(8, height - padding.top - padding.bottom);
+    const textColor = parseCssColor(cell.styles["color"]) ?? parseCssColor(row.styles["color"]) ?? COLORS.text;
+
+    if (cell.richBlocks?.length) {
+      const richHeight = estimateRichCellHeight(ctx, cell, contentWidth, font, size);
+      const richY = verticalContentY(contentY, contentHeight, richHeight, verticalAlign);
+      ctx.doc.save();
+      const contentRadius = isOverflowHidden(cell.styles) || radius > 0 ? Math.max(0, radius - Math.max(padding.left, padding.top)) : 0;
+      clipBox(ctx, contentX, contentY, contentWidth, contentHeight, contentRadius);
+      await drawRichBlocks(ctx, cell.richBlocks, contentX, richY, contentWidth, contentHeight, font, size, textColor);
+      ctx.doc.restore();
+      x += width;
+      col += span;
+      continue;
+    }
 
     if (cell.imageSrc) {
       const asset = await getAsset(ctx, cell.imageSrc);
@@ -1874,7 +2151,6 @@ async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promi
       }
     }
 
-    const textColor = parseCssColor(cell.styles["color"]) ?? parseCssColor(row.styles["color"]) ?? COLORS.text;
     const cellTextStyle = { ...row.styles, ...cell.styles };
     const noWrap = isNoWrapStyle(cellTextStyle);
     const displayInlines = displayInlineSegments(ctx, cell.text, cell.inlines, font, size, contentWidth, cellTextStyle);

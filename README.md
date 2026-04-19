@@ -44,6 +44,7 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 - inline badges/chips with `display: inline-block`, padding, borders, rounded backgrounds, and text transforms
 - block boxes with margins, padding, borders, background colors, and line-height
 - tables with repeated headers, horizontal wide-table pagination, `thead`, `tbody`, `tfoot`, `colspan`, and basic `rowspan`
+- rich table cells with nested boxes, headings, paragraphs, images, and absolute corner badges
 - table CSS: `border`, `border-width`, `border-color`, `padding`, `border-collapse: collapse`
 - row and cell CSS: `background-color`, `color`, `font-size`, `font-weight`, `text-align`, `vertical-align`, `height`, `min-height`
 - cell image CSS: `width`, `height`, `object-fit`, `object-position`
@@ -318,6 +319,7 @@ The CSS support is intentionally pragmatic:
 - `transform-origin` and `-webkit-transform-origin` for image transforms
 - `display: none`
 - `visibility: hidden`
+- bounded rich-cell `position: relative` containers and `position: absolute` children with `top`, `right`, `bottom`, `left`
 - `overflow: hidden` for rounded/clipped boxes and table-cell content
 - `page-break-before`, `page-break-after`, `break-before`, `break-after`
 - CSS `@page { size: A4 landscape; margin: 8mm }`
@@ -670,6 +672,7 @@ bun run example:layout
 bun run example:visual-css
 bun run example:production-layout
 bun run example:inline-badges
+bun run example:comparison-showcase
 bun run example:document
 bun run bench -- 10 100 --watermark
 ```

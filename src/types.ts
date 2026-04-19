@@ -219,9 +219,16 @@ export interface ParsedRow {
   styles: Record<string, string>;
 }
 
+export type ParsedCellBlock =
+  | { type: "box"; blocks: ParsedCellBlock[]; className: string; style: Record<string, string> }
+  | { type: "text"; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
+  | { type: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
+  | { type: "image"; src: string; alt: string; style: Record<string, string> };
+
 export interface ParsedCell {
   text: string;
   inlines: ParsedInlineSegment[];
+  richBlocks?: ParsedCellBlock[];
   className: string;
   style: string;
   styles: Record<string, string>;

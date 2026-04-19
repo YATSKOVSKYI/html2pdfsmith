@@ -315,6 +315,30 @@ if (inlineBadgesLoaded.getPageCount() !== inlineBadges.pages) {
 }
 console.log({ name: "inline-badges", pages: inlineBadges.pages, bytes: inlineBadges.pdf.byteLength, warnings: inlineBadges.warnings.length });
 
+const richCellIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60"><rect x="8" y="24" width="92" height="22" rx="8" fill="#b5978b" stroke="#334155"/><circle cx="32" cy="47" r="10" fill="#111827"/><circle cx="82" cy="47" r="10" fill="#111827"/></svg>`)}`;
+const richCell = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    td { border: 1px solid #d8dee8; padding: 8px; vertical-align: top; }
+    .card { position: relative; height: 96px; overflow: hidden; border: 1px solid #d8dee8; border-radius: 8px; background-color: #fff; }
+    .badge { position: absolute; top: 0; left: 0; display: inline-block; padding: 4px 9px; background-color: #e5e7eb; border: 1px solid #cbd5e1; font-size: 7px; font-weight: 700; }
+    img { width: 90px; height: 42px; margin-top: 20px; margin-bottom: 5px; text-align: center; object-fit: contain; }
+    h3 { margin: 0 10px 4px; font-size: 11px; }
+    p { margin: 0 10px; font-size: 8px; color: #64748b; }
+  </style></head><body>
+    <table><tbody><tr><td>
+      <div class="card"><span class="badge">2025</span><img src="${richCellIcon}"><h3>Model card</h3><p>Rich table cell content</p></div>
+    </td><td>Plain cell</td></tr></tbody></table>
+  </body></html>`,
+  hideHeader: true,
+  resourcePolicy: { allowData: true },
+});
+const richCellLoaded = await PDFDocument.load(richCell.pdf);
+if (richCellLoaded.getPageCount() !== richCell.pages) {
+  throw new Error("rich cell layout: reported page count mismatch");
+}
+console.log({ name: "rich-cell-layout", pages: richCell.pages, bytes: richCell.pdf.byteLength, warnings: richCell.warnings.length });
+
 await assertPdf("document-blocks", `<!doctype html><html><body>
   <style>
     .quote { background-color: #f6f8fa; border-color: #94a3b8; }
