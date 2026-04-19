@@ -194,7 +194,19 @@ export interface ParsedInlineSegment {
   inlineBox?: boolean;
 }
 
-export type ParsedChartType = "bar" | "line" | "donut";
+export type ParsedChartType =
+  | "bar"
+  | "horizontal-bar"
+  | "stacked-bar"
+  | "line"
+  | "area"
+  | "sparkline"
+  | "pie"
+  | "donut"
+  | "gauge"
+  | "radial"
+  | "radial-stacked"
+  | "radar";
 
 export interface ParsedChart {
   chartType: ParsedChartType;
@@ -202,8 +214,14 @@ export interface ParsedChart {
   subtitle?: string;
   labels: string[];
   values: number[];
+  series?: number[][];
+  seriesLabels?: string[];
+  max?: number;
+  center?: string;
+  theme?: string;
   unit?: string;
   colors?: string[];
+  gradient?: string[];
 }
 
 export type ParsedBlock =
@@ -214,6 +232,7 @@ export type ParsedBlock =
   | { type: "list-item"; text: string; inlines: ParsedInlineSegment[]; ordered: boolean; index: number; style: Record<string, string> }
   | { type: "image"; src: string; alt: string; style: Record<string, string> }
   | { type: "chart"; chart: ParsedChart; style: Record<string, string> }
+  | { type: "grid"; blocks: ParsedBlock[]; style: Record<string, string> }
   | { type: "hr"; style: Record<string, string> }
   | { type: "page-break"; style: Record<string, string> }
   | { type: "table"; table: ParsedTable; style: Record<string, string> };

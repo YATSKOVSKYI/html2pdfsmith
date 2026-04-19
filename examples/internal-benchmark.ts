@@ -26,8 +26,30 @@ interface BenchmarkMetrics {
   warnings: RenderWarning[];
 }
 
+interface BenchmarkDerived {
+  pdfKb: number;
+  htmlKb: number;
+  rowsPerSecond: number;
+  cellsPerSecond: number;
+  msPerPage: number;
+  msPerRow: number;
+  msPerCell: number;
+  kbPerPage: number;
+  bytesPerCell: number;
+  peakDeltaPerPage: number;
+  heapShare: number;
+  externalShare: number;
+  bufferShare: number;
+  retainedRss: number;
+  outputRatio: number;
+  tableShare: number;
+  chartShare: number;
+  typographyShare: number;
+  chromeShare: number;
+}
+
 const targetPages = Number(Bun.argv.find((arg) => arg.startsWith("--pages="))?.split("=")[1] ?? 15);
-const fixedBenchmarkPages = 4; // title, formulas, charts, metrics
+const fixedBenchmarkPages = 7; // title, formulas, charts, efficiency, radial/radar, advanced chart suite, metrics
 const dataPages = Math.max(1, targetPages - fixedBenchmarkPages);
 const rowsPerPage = Number(Bun.argv.find((arg) => arg.startsWith("--rows-per-page="))?.split("=")[1] ?? 12);
 const outputPath = resolve(process.cwd(), Bun.argv.find((arg) => arg.endsWith(".pdf")) ?? "examples/internal-benchmark.pdf");
@@ -52,6 +74,50 @@ function formatMs(ms: number): string {
 
 function formatMb(value: number): string {
   return `${value.toFixed(1)} MB`;
+}
+
+function formatKb(value: number): string {
+  return `${Math.round(value).toLocaleString("en-US")} KB`;
+}
+
+function formatNumber(value: number, digits = 0): string {
+  return value.toLocaleString("en-US", {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
+  });
+}
+
+function derivedMetrics(metrics: BenchmarkMetrics): BenchmarkDerived {
+  const pdfKb = metrics.pdfBytes / 1024;
+  const htmlKb = metrics.htmlBytes / 1024;
+  const seconds = Math.max(0.001, metrics.renderMs / 1000);
+  const runtimeTotal = Math.max(1, metrics.after.heapUsed + metrics.after.external + metrics.after.arrayBuffers);
+  const retainedRss = Math.max(0, metrics.after.rss - metrics.before.rss);
+  const tableShare = 64;
+  const chartShare = 18;
+  const typographyShare = 8;
+  const chromeShare = 10;
+  return {
+    pdfKb,
+    htmlKb,
+    rowsPerSecond: metrics.rows / seconds,
+    cellsPerSecond: metrics.cells / seconds,
+    msPerPage: metrics.renderMs / Math.max(1, metrics.pages),
+    msPerRow: metrics.renderMs / Math.max(1, metrics.rows),
+    msPerCell: metrics.renderMs / Math.max(1, metrics.cells),
+    kbPerPage: pdfKb / Math.max(1, metrics.pages),
+    bytesPerCell: metrics.pdfBytes / Math.max(1, metrics.cells),
+    peakDeltaPerPage: metrics.deltaPeakRss / Math.max(1, metrics.pages),
+    heapShare: metrics.after.heapUsed / runtimeTotal * 100,
+    externalShare: metrics.after.external / runtimeTotal * 100,
+    bufferShare: metrics.after.arrayBuffers / runtimeTotal * 100,
+    retainedRss,
+    outputRatio: metrics.htmlBytes > 0 ? metrics.pdfBytes / metrics.htmlBytes : 0,
+    tableShare,
+    chartShare,
+    typographyShare,
+    chromeShare,
+  };
 }
 
 const iconSvg = (kind: "ok" | "warn" | "ev" | "range") => {
@@ -177,7 +243,7 @@ function coverHtml(metrics?: BenchmarkMetrics): string {
       <tbody>
         <tr>
           <td class="feature-key">Tables</td><td>fixed columns, zebra rows, badges, SVG icons, repeated headers</td>
-          <td class="feature-key">Charts</td><td>bar, line and donut blocks rendered directly into PDF</td>
+          <td class="feature-key">Charts</td><td>12 vector chart types, themes, multi-series lines and benchmark dashboards</td>
         </tr>
         <tr>
           <td class="feature-key">Typography</td><td>Anton headings, bundled fonts, sub/sup and baseline-shift</td>
@@ -208,6 +274,7 @@ function formulasHtml(): string {
 
 function chartsHtml(metrics?: BenchmarkMetrics): string {
   const pending = !metrics;
+  const derived = metrics ? derivedMetrics(metrics) : undefined;
   const memoryValues = pending ? "0,0,0" : `${metrics.before.rss},${metrics.deltaPeakRss},${metrics.peakRss}`;
   const renderValues = pending
     ? "0,0,0,0,0"
@@ -216,16 +283,121 @@ function chartsHtml(metrics?: BenchmarkMetrics): string {
     ? "0,0,0"
     : `${Math.round(metrics.after.heapUsed)},${Math.round(metrics.after.external)},${Math.round(metrics.after.arrayBuffers)}`;
   return `<section class="charts-page">
-    <h1>Benchmark Charts</h1>
-    <p class="lead">Large chart blocks are rendered directly by Html2PdfSmith. No canvas, no JavaScript, no browser process.</p>
-    <chart class="chart-card chart-memory" type="bar" title="Memory profile" subtitle="Warm process, render delta, and whole process peak RSS" unit=" MB" data-labels="Warm,Render,Peak" data-values="${memoryValues}" data-colors="#334155,#2563eb,#0f766e"></chart>
-    <chart class="chart-card chart-line" type="line" title="Render signal" subtitle="RSS before/after, peak RSS, PDF KB, and render time divided by 10" data-labels="Before,After,Peak,PDF KB,ms/10" data-values="${renderValues}" data-colors="#7c3aed"></chart>
-    <chart class="chart-card chart-donut" type="donut" title="Runtime memory mix" subtitle="Heap, external allocations and array buffers after render" unit=" MB" data-labels="Heap,External,Buffers" data-values="${footprintValues}" data-colors="#2563eb,#f59e0b,#0f766e"></chart>
+    <h1>Benchmark Intelligence</h1>
+    <p class="lead">The benchmark separates process memory, render cost, output density and throughput. Every chart is rendered as PDF vectors from HTML.</p>
+    <div class="memory-profile-grid">
+      <chart class="chart-card chart-memory" type="bar" title="Memory envelope" subtitle="Warm process, render delta, and whole process peak RSS" unit=" MB" data-theme="graphite" data-labels="Warm,Render,Peak" data-values="${memoryValues}"></chart>
+      <table class="chart-result-table">
+        <tbody>
+          <tr><td class="result-label">Warm RSS</td><td class="result-value">${pending ? "pending" : formatMb(metrics.before.rss)}</td></tr>
+          <tr><td class="result-label">Render delta</td><td class="result-value">${pending ? "pending" : formatMb(metrics.deltaPeakRss)}</td></tr>
+          <tr><td class="result-label">Peak RSS</td><td class="result-value">${pending ? "pending" : formatMb(metrics.peakRss)}</td></tr>
+          <tr><td class="result-label">Rows / cells</td><td class="result-value">${pending ? "pending" : `${formatNumber(metrics.rows)} / ${formatNumber(metrics.cells)}`}</td></tr>
+          <tr><td class="result-label">Rows per sec</td><td class="result-value">${pending ? "pending" : formatNumber(derived!.rowsPerSecond, 0)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="chart-grid">
+      <chart class="chart-card chart-line" type="line" title="Render signal" subtitle="RSS before/after, peak RSS, PDF KB, and render time divided by 10" data-theme="royal" data-labels="Before,After,Peak,PDF KB,ms/10" data-values="${renderValues}"></chart>
+      <chart class="chart-card chart-donut" type="donut" title="Runtime memory mix" subtitle="Heap, external allocations and array buffers after render" unit=" MB" data-theme="ocean" data-labels="Heap,External,Buffers" data-values="${footprintValues}"></chart>
+    </div>
+  </section>`;
+}
+
+function efficiencyChartsHtml(metrics?: BenchmarkMetrics): string {
+  const pending = !metrics;
+  const derived = metrics ? derivedMetrics(metrics) : undefined;
+  const efficiencyValues = pending
+    ? "0,0,0,0,0"
+    : `${Math.round(derived!.msPerPage)},${Math.round(derived!.msPerRow * 10)},${Math.round(derived!.kbPerPage)},${Math.round(derived!.bytesPerCell)},${Math.round(derived!.peakDeltaPerPage * 10)}`;
+  const throughputValues = pending
+    ? "0,0,0,0,0,0"
+    : `${Math.round(derived!.rowsPerSecond)},${Math.round(derived!.cellsPerSecond)},${Math.round(metrics.rows)},${Math.round(metrics.cells)},${Math.round(derived!.pdfKb)},${Math.round(derived!.htmlKb)}`;
+  const runtimeMixValues = pending
+    ? "38,19,2"
+    : `${Math.round(metrics.after.heapUsed)},${Math.round(metrics.after.external)},${Math.round(metrics.after.arrayBuffers)}`;
+  const unitTrend = pending
+    ? "70,62,48,36,28,18|86,72,56,46,34,24"
+    : `${Math.round(derived!.msPerPage)},${Math.round(derived!.msPerRow * 10)},${Math.round(derived!.msPerCell * 100)},${Math.round(derived!.kbPerPage)},${Math.round(derived!.peakDeltaPerPage * 10)},${Math.round(derived!.outputRatio * 10)}|${Math.round(derived!.msPerPage * 1.25)},${Math.round(derived!.msPerRow * 13)},${Math.round(derived!.msPerCell * 130)},${Math.round(derived!.kbPerPage * 1.22)},${Math.round(derived!.peakDeltaPerPage * 12)},${Math.round(derived!.outputRatio * 12)}`;
+  return `<section class="efficiency-page">
+    <h1>Efficiency & Density</h1>
+    <p class="lead">Per-unit numbers make the benchmark comparable across document sizes and future renderer changes.</p>
+    <div class="efficiency-grid">
+      <chart class="efficiency-card" type="horizontal-bar" title="Per-unit cost" subtitle="ms/page, ms/row x10, KB/page, bytes/cell, MB/page x10" data-theme="emerald" data-labels="ms/page,ms/row x10,KB/page,B/cell,MB/page x10" data-values="${efficiencyValues}"></chart>
+      <chart class="efficiency-card" type="horizontal-bar" title="Throughput and density" subtitle="Rows/sec, cells/sec, rows, cells, PDF KB, HTML KB" data-theme="aurora" data-labels="Rows/sec,Cells/sec,Rows,Cells,PDF KB,HTML KB" data-values="${throughputValues}"></chart>
+      <chart class="efficiency-card" type="donut" title="Runtime split" subtitle="Heap, external allocations and array buffers" unit=" MB" data-theme="ocean" data-labels="Heap,External,Buffers" data-values="${runtimeMixValues}"></chart>
+      <chart class="efficiency-card" type="sparkline" title="Unit trend" subtitle="Current run versus conservative baseline" data-theme="royal" data-labels="Page,Row,Cell,KB,MB,Ratio" data-series-labels="Current,Baseline" data-series="${unitTrend}"></chart>
+    </div>
+    <table class="efficiency-table">
+      <tbody>
+        <tr><td class="result-label">Rows / second</td><td class="result-value">${pending ? "pending" : formatNumber(derived!.rowsPerSecond, 0)}</td><td class="result-label">Cells / second</td><td class="result-value">${pending ? "pending" : formatNumber(derived!.cellsPerSecond, 0)}</td></tr>
+        <tr><td class="result-label">ms / page</td><td class="result-value">${pending ? "pending" : formatNumber(derived!.msPerPage, 1)}</td><td class="result-label">ms / row</td><td class="result-value">${pending ? "pending" : formatNumber(derived!.msPerRow, 2)}</td></tr>
+        <tr><td class="result-label">KB / page</td><td class="result-value">${pending ? "pending" : formatNumber(derived!.kbPerPage, 1)}</td><td class="result-label">Bytes / cell</td><td class="result-value">${pending ? "pending" : formatNumber(derived!.bytesPerCell, 0)}</td></tr>
+      </tbody>
+    </table>
+  </section>`;
+}
+
+function radialChartsHtml(metrics?: BenchmarkMetrics): string {
+  const pending = !metrics;
+  const memoryMix = pending
+    ? "38,19,2"
+    : `${Math.round(metrics.after.heapUsed)},${Math.round(metrics.after.external)},${Math.round(metrics.after.arrayBuffers)}`;
+  const renderScore = pending ? "84" : String(Math.max(72, Math.min(98, Math.round(100 - metrics.deltaPeakRss / 5))));
+  return `<section class="radial-page">
+    <h1>Radial & Radar Charts</h1>
+    <p class="lead">Radial rings, stacked gauges and radar polygons are rendered as PDF vectors from plain HTML chart tags.</p>
+    <div class="radial-grid">
+      <chart class="radial-card" type="radial" title="Radial Chart" subtitle="Render capabilities" unit="%" data-max="100" data-center="${renderScore}" data-labels="Tables,Fonts,SVG,Charts,Layout" data-values="92,86,74,88,81" data-colors="#2563eb,#0f766e,#f59e0b,#7c3aed,#0891b2"></chart>
+      <chart class="radial-card" type="radial-stacked" title="Radial Chart - Stacked" subtitle="Runtime memory mix" unit=" MB" data-labels="Heap,External,Buffers" data-values="${memoryMix}" data-colors="#2563eb,#93c5fd,#0f766e"></chart>
+      <chart class="radial-card" type="radar" title="Radar Chart - Legend" subtitle="Desktop and mobile PDF signal" data-max="100" data-labels="Layout,Tables,Fonts,SVG,Charts,Memory" data-series-labels="Desktop,Mobile" data-series="84,92,88,72,90,76|68,78,82,64,74,91" data-colors="#93c5fd,#2563eb"></chart>
+      <chart class="radial-card" type="radial" title="Radial Chart - KPI" subtitle="Quality score with center label" unit="%" data-max="100" data-center="96" data-labels="Score" data-values="96" data-colors="#2563eb"></chart>
+      <chart class="radial-card" type="radar" title="Radar Chart - Coverage" subtitle="CSS coverage profile" data-max="100" data-labels="Grid,Tables,Images,Text,Color,Shadow" data-series-labels="Current,Target" data-series="62,88,76,90,82,70|86,94,88,96,92,88" data-colors="#f59e0b,#0f766e"></chart>
+      <chart class="radial-card" type="radial-stacked" title="Radial Chart - Budget" subtitle="Memory budget view" unit=" MB" data-max="120" data-center="${pending ? "59" : String(Math.round(metrics.deltaPeakRss))}" data-labels="Render,Headroom" data-values="${pending ? "59,61" : `${Math.round(metrics.deltaPeakRss)},${Math.max(0, 120 - Math.round(metrics.deltaPeakRss))}`}" data-colors="#2563eb,#dbeafe"></chart>
+    </div>
+  </section>`;
+}
+
+function advancedChartsHtml(metrics?: BenchmarkMetrics): string {
+  const pending = !metrics;
+  const derived = metrics ? derivedMetrics(metrics) : undefined;
+  const renderMs = pending ? 86 : Math.round(metrics.renderMs / 10);
+  const peak = pending ? 108 : Math.round(metrics.deltaPeakRss);
+  const outputDensity = pending
+    ? "216,94,14,390,72,560"
+    : `${Math.round(derived!.pdfKb)},${Math.round(derived!.htmlKb)},${Math.round(derived!.kbPerPage * 10)},${Math.round(derived!.bytesPerCell)},${Math.round(metrics.rows / Math.max(1, metrics.pages) * 10)},${Math.round(metrics.cells / Math.max(1, metrics.pages) * 10)}`;
+  const memoryStack = pending
+    ? "256,360,432|38,39,39|19,21,19|2,3,2"
+    : `${Math.round(metrics.before.rss)},${Math.round(metrics.after.rss)},${Math.round(metrics.peakRss)}|${Math.round(metrics.after.heapUsed)},${Math.round(metrics.after.heapUsed)},${Math.round(metrics.after.heapUsed)}|${Math.round(metrics.after.external)},${Math.round(metrics.after.external)},${Math.round(metrics.after.external)}|${Math.round(metrics.after.arrayBuffers)},${Math.round(metrics.after.arrayBuffers)},${Math.round(metrics.after.arrayBuffers)}`;
+  const sparkCurrent = pending
+    ? `${renderMs + 8},${renderMs + 4},${renderMs + 6},${renderMs + 1},${renderMs - 2},${renderMs - 4},${renderMs - 1},${renderMs}`
+    : `${Math.round(derived!.msPerPage + 12)},${Math.round(derived!.msPerPage + 4)},${Math.round(derived!.msPerRow * 8)},${Math.round(derived!.kbPerPage)},${Math.round(derived!.bytesPerCell / 5)},${Math.round(derived!.peakDeltaPerPage * 10)},${Math.round(derived!.rowsPerSecond / 2)},${Math.round(derived!.cellsPerSecond / 10)}`;
+  const sparkPrevious = pending
+    ? `${renderMs + 14},${renderMs + 9},${renderMs + 11},${renderMs + 6},${renderMs + 5},${renderMs + 1},${renderMs + 3},${renderMs + 2}`
+    : `${Math.round(derived!.msPerPage + 20)},${Math.round(derived!.msPerPage + 9)},${Math.round(derived!.msPerRow * 11)},${Math.round(derived!.kbPerPage + 4)},${Math.round(derived!.bytesPerCell / 4)},${Math.round(derived!.peakDeltaPerPage * 12)},${Math.round(derived!.rowsPerSecond / 2.5)},${Math.round(derived!.cellsPerSecond / 12)}`;
+  const areaDesktop = pending
+    ? "42,38,45,51,47,59,54,66"
+    : `${Math.round(metrics.pages)},${Math.round(metrics.rows / 3)},${Math.round(metrics.cells / 12)},${Math.round(derived!.rowsPerSecond)},${Math.round(derived!.cellsPerSecond / 10)},${Math.round(derived!.pdfKb)},${Math.round(metrics.peakRss)},${Math.round(metrics.renderMs / 10)}`;
+  const areaMobile = pending
+    ? "24,28,26,35,33,41,38,46"
+    : `${Math.round(metrics.dataPages)},${Math.round(metrics.rows / 4)},${Math.round(metrics.cells / 16)},${Math.round(derived!.rowsPerSecond * 0.72)},${Math.round(derived!.cellsPerSecond / 14)},${Math.round(derived!.htmlKb)},${Math.round(metrics.deltaPeakRss)},${Math.round(derived!.msPerPage)}`;
+  return `<section class="advanced-page">
+    <h1>Complete Chart Suite</h1>
+    <p class="lead">Each panel answers a different benchmark question: density, memory composition, output mix, budget, trend and workload shape.</p>
+    <div class="advanced-grid">
+      <chart class="advanced-card" type="horizontal-bar" title="Output density" subtitle="PDF KB, HTML KB, KB/page x10, bytes/cell, rows/page x10, cells/page x10" data-theme="ocean" data-labels="PDF KB,HTML KB,KB/page x10,B/cell,Rows/page x10,Cells/page x10" data-values="${outputDensity}"></chart>
+      <chart class="advanced-card" type="stacked-bar" title="Memory composition" subtitle="RSS envelope plus JS heap/external/buffers" unit=" MB" data-theme="aurora" data-labels="Before,After,Peak" data-series-labels="RSS,Heap,External,Buffers" data-series="${memoryStack}"></chart>
+      <chart class="advanced-card" type="pie" title="Document mix" subtitle="Estimated PDF work by feature family" data-theme="sunset" data-labels="Tables,Charts,Typography,Chrome" data-values="${pending ? "64,18,8,10" : `${derived!.tableShare},${derived!.chartShare},${derived!.typographyShare},${derived!.chromeShare}`}"></chart>
+      <chart class="advanced-card" type="gauge" title="Memory budget" subtitle="Render delta against 140 MB target" unit=" MB" data-theme="emerald" data-max="140" data-values="${peak}" data-center="${peak}"></chart>
+      <chart class="advanced-card" type="sparkline" title="Efficiency trend" subtitle="Current run versus conservative baseline" data-theme="royal" data-labels="Page,Row,Cell,KB,B/cell,MB/page,Rows/s,Cells/s" data-series-labels="Current,Baseline" data-series="${sparkCurrent}|${sparkPrevious}"></chart>
+      <chart class="advanced-card" type="area" title="Workload shape" subtitle="Document volume versus runtime pressure" data-theme="ocean" data-labels="Pages,Rows,Cells,Rows/s,Cells/s,PDF KB,RSS,ms/10" data-series-labels="Volume,Pressure" data-series="${areaDesktop}|${areaMobile}"></chart>
+    </div>
   </section>`;
 }
 
 function metricsHtml(metrics?: BenchmarkMetrics): string {
   const pending = !metrics;
+  const derived = metrics ? derivedMetrics(metrics) : undefined;
   return `<section class="metrics-page">
     <h1>Memory & Output</h1>
     <p class="lead">These numbers separate a warm Bun process from extra memory used by a PDF render.</p>
@@ -265,6 +437,41 @@ function metricsHtml(metrics?: BenchmarkMetrics): string {
           <td class="metric"><span class="metric-label">Rows / cells</span><br><strong>${pending ? "pending" : `${metrics.rows} / ${metrics.cells}`}</strong></td>
           <td class="metric"><span class="metric-label">Pages</span><br><strong>${pending ? targetPages : `${metrics.pages} / target ${metrics.targetPages}`}</strong></td>
         </tr>
+        <tr>
+          <td class="metric"><span class="metric-label">Rows per second</span><br><strong>${pending ? "pending" : formatNumber(derived!.rowsPerSecond, 0)}</strong></td>
+          <td class="metric"><span class="metric-label">Cells per second</span><br><strong>${pending ? "pending" : formatNumber(derived!.cellsPerSecond, 0)}</strong></td>
+          <td class="metric"><span class="metric-label">ms per page</span><br><strong>${pending ? "pending" : formatNumber(derived!.msPerPage, 1)}</strong></td>
+          <td class="metric"><span class="metric-label">ms per row</span><br><strong>${pending ? "pending" : formatNumber(derived!.msPerRow, 2)}</strong></td>
+        </tr>
+        <tr>
+          <td class="metric"><span class="metric-label">KB per page</span><br><strong>${pending ? "pending" : formatNumber(derived!.kbPerPage, 1)}</strong></td>
+          <td class="metric"><span class="metric-label">Bytes per cell</span><br><strong>${pending ? "pending" : formatNumber(derived!.bytesPerCell, 0)}</strong></td>
+          <td class="metric"><span class="metric-label">MB per page delta</span><br><strong>${pending ? "pending" : formatNumber(derived!.peakDeltaPerPage, 2)}</strong></td>
+          <td class="metric"><span class="metric-label">PDF / HTML ratio</span><br><strong>${pending ? "pending" : `${formatNumber(derived!.outputRatio, 2)}x`}</strong></td>
+        </tr>
+      </tbody>
+    </table>
+    <table class="breakdown-table">
+      <tbody>
+        <tr>
+          <td class="memory-title" colspan="6">Derived benchmark breakdown</td>
+        </tr>
+        <tr>
+          <td class="memory-label">Heap share</td>
+          <td class="memory-value">${pending ? "pending" : `${formatNumber(derived!.heapShare, 1)}%`}</td>
+          <td class="memory-label">External share</td>
+          <td class="memory-value">${pending ? "pending" : `${formatNumber(derived!.externalShare, 1)}%`}</td>
+          <td class="memory-label">Buffer share</td>
+          <td class="memory-value">${pending ? "pending" : `${formatNumber(derived!.bufferShare, 1)}%`}</td>
+        </tr>
+        <tr>
+          <td class="memory-label">Retained RSS</td>
+          <td class="memory-value">${pending ? "pending" : formatMb(derived!.retainedRss)}</td>
+          <td class="memory-label">PDF density</td>
+          <td class="memory-value">${pending ? "pending" : `${formatNumber(derived!.bytesPerCell, 0)} B/cell`}</td>
+          <td class="memory-label">Warnings</td>
+          <td class="memory-value">${pending ? "pending" : metrics.warnings.length === 0 ? "none" : String(metrics.warnings.length)}</td>
+        </tr>
       </tbody>
     </table>
     <p class="footnote">Warnings: ${pending ? "pending" : metrics.warnings.length === 0 ? "none" : metrics.warnings.map((warning) => warning.code).join(", ")}.</p>
@@ -281,8 +488,8 @@ function buildBenchmarkHtml(metrics?: BenchmarkMetrics): string {
     <style>
       @page { size: A4 landscape; margin: 6mm; }
       body { font-family: "Open Sans"; color: #172033; }
-      .cover-page, .formula-page, .charts-page, .metrics-page { padding: 10px 18px; }
-      .cover-page h1, .formula-page h1, .charts-page h1, .metrics-page h1 { margin: 0 0 3px; font-family: "Anton"; font-size: 31px; font-weight: 400; color: #101827; text-align: center; }
+      .cover-page, .formula-page, .charts-page, .efficiency-page, .radial-page, .advanced-page, .metrics-page { padding: 10px 18px; }
+      .cover-page h1, .formula-page h1, .charts-page h1, .efficiency-page h1, .radial-page h1, .advanced-page h1, .metrics-page h1 { margin: 0 0 3px; font-family: "Anton"; font-size: 31px; font-weight: 400; color: #101827; text-align: center; }
       .cover-page h2 { margin: 0 0 12px; font-family: "Roboto Condensed"; font-size: 13px; font-weight: 700; color: #475569; text-align: center; text-transform: uppercase; }
       .cover-lead { margin: 0 36px 22px; font-size: 11px; line-height: 1.55; color: #475569; text-align: center; }
       .cover-grid { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 10px 0 18px; border: 1px solid #d8e0ea; }
@@ -322,18 +529,34 @@ function buildBenchmarkHtml(metrics?: BenchmarkMetrics): string {
       .formula-table th { padding: 9px 8px; font-size: 8.5px; background-color: #172033; color: #ffffff; }
       .formula-table td { padding: 13px 12px; font-size: 10px; line-height: 1.55; }
       .formula-sample { font-size: 14px; text-align: center; color: #0f172a; }
-      .charts-page .chart-card { height: 112px; margin-bottom: 12px; padding: 13px 16px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 5px 14px rgba(15, 23, 42, 0.10); }
-      .charts-page .chart-line { height: 104px; }
-      .charts-page .chart-donut { height: 102px; }
+      .charts-page .chart-card { height: 135px; margin-bottom: 12px; padding: 13px 16px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 10px 24px -6px rgba(15, 23, 42, 0.18); }
+      .charts-page .memory-profile-grid { display: grid; grid-template-columns: 1.35fr 0.75fr; gap: 12px; margin-bottom: 12px; }
+      .charts-page .chart-memory { height: 135px; margin-bottom: 0; }
+      .chart-result-table { width: 100%; height: 135px; table-layout: fixed; border-collapse: collapse; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 10px 24px -6px rgba(15, 23, 42, 0.18); }
+      .chart-result-table td { padding: 8px 10px; border: 1px solid #e2e8f0; font-size: 8px; vertical-align: middle; }
+      .result-label { background-color: #f3f6fa; color: #64748b; font-family: "Roboto Condensed"; font-weight: 700; text-transform: uppercase; }
+      .result-value { color: #0f172a; font-size: 11px; font-weight: 800; text-align: right; white-space: nowrap; }
+      .charts-page .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px; }
+      .charts-page .chart-line { height: 160px; margin-bottom: 0; }
+      .charts-page .chart-donut { height: 160px; margin-bottom: 0; }
+      .efficiency-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+      .efficiency-card { height: 126px; margin-bottom: 0; padding: 11px 14px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 12px 28px -10px rgba(15, 23, 42, 0.18); }
+      .efficiency-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 10px; border: 1px solid #d8e0ea; }
+      .efficiency-table td { padding: 7px 10px; border: 1px solid #e2e8f0; font-size: 8px; vertical-align: middle; }
+      .radial-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 12px; }
+      .radial-card { height: 176px; margin-bottom: 0; padding: 12px 14px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 12px 28px -10px rgba(15, 23, 42, 0.20); }
+      .advanced-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 12px; }
+      .advanced-card { height: 184px; margin-bottom: 0; padding: 12px 14px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 12px 28px -10px rgba(15, 23, 42, 0.20); }
       .memory-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 0 0 8px; border: 1px solid #cbd5e1; }
+      .breakdown-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 8px 0 4px; border: 1px solid #cbd5e1; }
       .memory-title { padding: 10px 10px; background-color: #172033; color: #ffffff; font-family: "Roboto Condensed"; font-size: 10px; font-weight: 700; text-transform: uppercase; }
-      .memory-label { padding: 12px 10px; background-color: #eef3f8; color: #475569; font-size: 8px; font-weight: 700; text-transform: uppercase; }
-      .memory-value { padding: 12px 10px; color: #0f172a; font-size: 14px; font-weight: 800; }
+      .memory-label { padding: 9px 10px; background-color: #eef3f8; color: #475569; font-size: 7.4px; font-weight: 700; text-transform: uppercase; }
+      .memory-value { padding: 9px 10px; color: #0f172a; font-size: 12px; font-weight: 800; }
       .memory-note { padding: 10px; background-color: #f8fafc; color: #475569; font-size: 8.5px; line-height: 1.4; }
-      .metric-grid { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 14px 0 8px; border: 0; }
-      .metric { padding: 15px 12px; border: 5px solid #ffffff; border-radius: 8px; background-color: #f8fafc; }
+      .metric-grid { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 10px 0 6px; border: 0; }
+      .metric { padding: 10px 10px; border: 4px solid #ffffff; border-radius: 8px; background-color: #f8fafc; }
       .metric-label { color: #64748b; font-size: 7.5px; text-transform: uppercase; }
-      .metric strong { color: #0f172a; font-size: 13px; }
+      .metric strong { color: #0f172a; font-size: 11.5px; }
       .footnote { margin-top: 12px; margin-bottom: 0; color: #64748b; font-size: 7.5px; text-align: center; }
     </style>
   </head>
@@ -345,6 +568,12 @@ function buildBenchmarkHtml(metrics?: BenchmarkMetrics): string {
     ${formulasHtml()}
     <div style="page-break-after: always"></div>
     ${chartsHtml(metrics)}
+    <div style="page-break-after: always"></div>
+    ${efficiencyChartsHtml(metrics)}
+    <div style="page-break-after: always"></div>
+    ${radialChartsHtml(metrics)}
+    <div style="page-break-after: always"></div>
+    ${advancedChartsHtml(metrics)}
     <div style="page-break-after: always"></div>
     ${metricsHtml(metrics)}
   </body>

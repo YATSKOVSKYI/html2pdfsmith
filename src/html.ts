@@ -344,27 +344,85 @@ function splitList(value: string): string[] {
   return trimmed.split(/[|,;]/).map((item) => item.trim()).filter(Boolean);
 }
 
+function splitNumberList(value: string): number[] {
+  return splitList(value)
+    .map((item) => Number.parseFloat(item.replace(/\s+/g, "")))
+    .filter((item) => Number.isFinite(item));
+}
+
+function parseChartSeries(value: string): number[][] {
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((series) => Array.isArray(series)
+            ? series.map((item) => Number.parseFloat(String(item).replace(/\s+/g, ""))).filter((item) => Number.isFinite(item))
+            : [])
+          .filter((series) => series.length > 0);
+      }
+    } catch {
+      // Fall back to delimiter parsing below.
+    }
+  }
+  return trimmed
+    .split("|")
+    .map((series) => splitNumberList(series))
+    .filter((series) => series.length > 0);
+}
+
 function parseChart(el: Element): ParsedChart | undefined {
   const rawType = (attr(el, "type") || attr(el, "data-chart")).trim().toLowerCase();
-  const chartType: ParsedChartType = rawType === "line" || rawType === "donut" ? rawType : "bar";
-  const values = splitList(attr(el, "data-values") || attr(el, "values"))
-    .map((value) => Number.parseFloat(value.replace(/\s+/g, "")))
-    .filter((value) => Number.isFinite(value));
-  if (values.length === 0) return undefined;
+  const chartTypeMap: Record<string, ParsedChartType> = {
+    area: "area",
+    bar: "bar",
+    donut: "donut",
+    doughnut: "donut",
+    gauge: "gauge",
+    hbar: "horizontal-bar",
+    "horizontal-bar": "horizontal-bar",
+    line: "line",
+    pie: "pie",
+    radar: "radar",
+    radial: "radial",
+    "radial-stacked": "radial-stacked",
+    spark: "sparkline",
+    sparkline: "sparkline",
+    stacked: "stacked-bar",
+    "stacked-bar": "stacked-bar",
+  };
+  const chartType = chartTypeMap[rawType] ?? "bar";
+  const series = parseChartSeries(attr(el, "data-series") || attr(el, "series"));
+  const values = splitNumberList(attr(el, "data-values") || attr(el, "values"));
+  const chartValues = values.length > 0 ? values : series[0] ?? [];
+  if (chartValues.length === 0) return undefined;
   const labels = splitList(attr(el, "data-labels") || attr(el, "labels"));
+  const seriesLabels = splitList(attr(el, "data-series-labels") || attr(el, "series-labels"));
   const colors = splitList(attr(el, "data-colors") || attr(el, "colors"));
+  const gradient = splitList(attr(el, "data-gradient") || attr(el, "gradient"));
+  const max = Number.parseFloat((attr(el, "data-max") || attr(el, "max")).trim());
   const chart: ParsedChart = {
     chartType,
-    values,
-    labels: labels.length > 0 ? labels : values.map((_, index) => String(index + 1)),
+    values: chartValues,
+    labels: labels.length > 0 ? labels : chartValues.map((_, index) => String(index + 1)),
   };
   const title = attr(el, "title").trim();
   const subtitle = attr(el, "subtitle").trim();
   const unit = attr(el, "unit").trim();
+  const center = (attr(el, "data-center") || attr(el, "center")).trim();
+  const theme = (attr(el, "data-theme") || attr(el, "theme")).trim().toLowerCase();
   if (title) chart.title = title;
   if (subtitle) chart.subtitle = subtitle;
   if (unit) chart.unit = unit;
+  if (center) chart.center = center;
+  if (theme) chart.theme = theme;
+  if (series.length > 0) chart.series = series;
+  if (seriesLabels.length > 0) chart.seriesLabels = seriesLabels;
+  if (Number.isFinite(max) && max > 0) chart.max = max;
   if (colors.length > 0) chart.colors = colors;
+  if (gradient.length > 0) chart.gradient = gradient;
   return chart;
 }
 
@@ -639,6 +697,12 @@ function parseFlowBlocks(nodes: AnyNode[], rules: CssRule[], blocks: ParsedBlock
     }
 
     if (name === "div" || name === "section" || name === "article" || name === "main" || name === "aside") {
+      if ((style["display"] ?? "").trim().toLowerCase() === "grid") {
+        const childBlocks = parseFlowBlocks(node.children ?? [], rules, []);
+        if (childBlocks.length > 0) blocks.push({ type: "grid", blocks: childBlocks, style });
+        if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
+        return;
+      }
       const before = blocks.length;
       for (const child of node.children ?? []) visit(child);
       const producedChildBlock = blocks.length > before;

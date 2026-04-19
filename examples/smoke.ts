@@ -275,10 +275,22 @@ console.log({ name: "visual-css-controls", pages: visualCss.pages, bytes: visual
 const chartControls = await renderHtmlToPdfDetailed({
   html: `<!doctype html><html><head><style>
     chart { height: 78px; margin-bottom: 8px; padding: 8px 10px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #fff; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grid chart { height: 90px; margin-bottom: 0; }
   </style></head><body>
     <chart type="bar" title="Memory" subtitle="Direct PDF chart" unit=" MB" data-labels="Warm,Render,Peak" data-values="248,96,344" data-colors="#334155,#2563eb,#0f766e"></chart>
-    <chart type="line" title="Trend" data-labels="A,B,C,D" data-values="10,18,14,26" data-colors="#7c3aed"></chart>
-    <chart type="donut" title="Mix" unit=" MB" data-labels="Heap,External,Buffers" data-values="34,18,2" data-colors="#2563eb,#f59e0b,#0f766e"></chart>
+    <div class="grid">
+      <chart type="line" title="Trend" data-theme="aurora" data-labels="A,B,C,D" data-series-labels="Desktop,Mobile" data-series="10,18,14,26|8,12,16,20"></chart>
+      <chart type="donut" title="Mix" unit=" MB" data-labels="Heap,External,Buffers" data-values="34,18,2" data-colors="#2563eb,#f59e0b,#0f766e"></chart>
+      <chart type="radial" title="Radial" unit="%" data-max="100" data-center="84" data-labels="Speed,Quality,Memory" data-values="84,67,92" data-colors="#2563eb,#0f766e,#f59e0b"></chart>
+      <chart type="radial-stacked" title="Stacked gauge" unit=" MB" data-labels="Heap,External,Buffers" data-values="38,19,2" data-colors="#2563eb,#93c5fd,#0f766e"></chart>
+      <chart type="radar" title="Radar" data-max="100" data-labels="Layout,Tables,Fonts,SVG,Charts,Memory" data-series-labels="Desktop,Mobile" data-series="82,94,76,70,88,66|62,70,83,61,74,92" data-colors="#93c5fd,#2563eb"></chart>
+      <chart type="horizontal-bar" title="Horizontal" unit="%" data-max="100" data-labels="Tables,Fonts,SVG" data-values="92,86,74" data-colors="#2563eb,#0f766e,#f59e0b"></chart>
+      <chart type="stacked-bar" title="Stacked bars" data-labels="Q1,Q2,Q3" data-series-labels="Heap,External" data-series="34,38,42|18,16,22" data-colors="#2563eb,#93c5fd"></chart>
+      <chart type="pie" title="Pie" data-labels="A,B,C" data-values="42,31,27" data-colors="#2563eb,#0f766e,#f59e0b"></chart>
+      <chart type="gauge" title="Gauge" unit="%" data-max="100" data-values="78" data-colors="#2563eb"></chart>
+      <chart type="sparkline" title="Sparkline" unit=" ms" data-theme="royal" data-labels="1,2,3,4,5,6" data-series-labels="Current,Previous" data-series="44,38,48,42,36,31|49,45,46,41,39,35"></chart>
+    </div>
   </body></html>`,
   hideHeader: true,
 });

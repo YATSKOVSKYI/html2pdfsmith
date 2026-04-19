@@ -43,6 +43,7 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 - inline rich text: `strong`, `b`, `em`, `i`, `u`, `s`, `del`, `sup`, `sub`, `span style`, `a href`, `code`
 - inline badges/chips with `display: inline-block`, padding, borders, rounded backgrounds, and text transforms
 - block boxes with margins, padding, borders, background colors, and line-height
+- lightweight CSS Grid for document blocks: `display: grid`, `grid-template-columns`, `gap`, `row-gap`, and `column-gap`
 - tables with repeated headers, horizontal wide-table pagination, `thead`, `tbody`, `tfoot`, `colspan`, and basic `rowspan`
 - rich table cells with nested boxes, headings, paragraphs, images, and absolute corner badges
 - table CSS: `border`, `border-width`, `border-color`, `padding`, `border-collapse: collapse`
@@ -51,12 +52,12 @@ Html2PdfSmith is not trying to be a full browser. It is trying to be a small, co
 - cross-platform image transforms: `transform`, `transform-origin`, `-webkit-transform`, `-webkit-transform-origin`, `opacity`
 - table layout controls: `colgroup`, `table-layout: fixed`, `white-space`, `text-overflow: ellipsis`
 - per-side borders: `border-top`, `border-right`, `border-bottom`, `border-left`, dashed and dotted lines
-- visual CSS: `background-image`, `background-size`, `background-position`, `background-repeat`, `border-radius`, per-corner radius, `box-shadow`, `text-transform`
+- visual CSS: `background-image`, `background-size`, `background-position`, `background-repeat`, `border-radius`, per-corner radius, multi-layer `box-shadow`, `text-transform`
 - inline visual CSS: `display: inline-block`, `padding`, `border`, `border-radius`, `background-color`
 - print CSS: `@media print` / `@media all` rules are applied, `@media screen` rules are ignored
 - content-aware `table-layout: auto` for tables without explicit `colgroup` widths
 - image support for PNG, JPEG, SVG, data URLs, local files, and HTTP(S) URLs
-- browserless charts through HTML `<chart>` blocks: bar, line/area, and donut charts
+- browserless charts through HTML `<chart>` blocks: bar, horizontal-bar, stacked-bar, line/area, sparkline, pie, donut, gauge, radial, radial-stacked, and radar charts
 - PNG/JPEG natural aspect-ratio handling when only width or height is provided
 - text and image watermarks
 - custom font paths, font bytes, optional bundled fonts, optional Google Fonts disk cache, and optional system font discovery
@@ -304,6 +305,9 @@ The CSS support is intentionally pragmatic:
 - `font-style: italic`
 - `color`
 - `display: inline-block` and `display: inline-flex` for inline spans/chips
+- `display: grid` for simple block grids
+- `grid-template-columns`, including fixed lengths, percentages, `fr`, and `repeat(2, 1fr)`
+- `gap`, `row-gap`, and `column-gap`
 - `background-color`
 - `background-image: url(...)`
 - `background-size: cover`, `background-size: contain`, `background-size: auto`, and explicit sizes such as `32px 32px`
@@ -333,7 +337,7 @@ The CSS support is intentionally pragmatic:
 - `height`, `width`, `margin`, `padding`, `border`, `border-radius`, `background-color`, `box-shadow`, `font-size`, and `color` for `<chart>` blocks
 - `border-radius` for text boxes and table cells, including four-value shorthand and `border-*-radius`
 - `padding`, `border`, `border-radius`, and `background-color` for inline `span` badges/chips
-- simplified `box-shadow` for text boxes and table cells
+- `box-shadow` with multiple comma-separated layers, blur, spread, negative spread, `none`, and basic `inset`
 - `object-fit: contain`, `object-fit: cover`, `object-fit: fill` for images in table cells
 - `object-position` keywords such as `left top`, `center center`, `right bottom`
 - `opacity` for images
@@ -537,7 +541,113 @@ Charts are rendered directly into the PDF stream. They do not require Canvas, SV
 </chart>
 ```
 
-Supported chart types are `bar`, `line`, and `donut`. Chart blocks accept normal document styling such as `width`, `height`, `margin`, `padding`, `border`, `border-radius`, `background-color`, `box-shadow`, `font-size`, and `color`.
+Supported chart types are `bar`, `horizontal-bar`, `stacked-bar`, `line`, `area`, `sparkline`, `pie`, `donut`, `gauge`, `radial`, `radial-stacked`, and `radar`. Chart blocks accept normal document styling such as `width`, `height`, `margin`, `padding`, `border`, `border-radius`, `background-color`, `box-shadow`, `font-size`, and `color`.
+
+Built-in chart themes are available through `data-theme`: `default`, `aurora`, `emerald`, `graphite`, `royal`, `sunset`, and `ocean`. Explicit `data-colors` always override the theme palette.
+
+Line, area and sparkline charts support multiple series through `data-series`:
+
+```html
+<chart
+  type="area"
+  title="Traffic"
+  data-theme="ocean"
+  data-labels="Apr 5,Apr 10,Apr 15,Apr 20"
+  data-series-labels="Desktop,Mobile"
+  data-series="42,38,45,51|24,28,26,35">
+</chart>
+```
+
+Horizontal bars, stacked bars, pie charts, gauges and sparklines use the same declarative data attributes:
+
+```html
+<chart
+  type="horizontal-bar"
+  title="Feature score"
+  unit="%"
+  data-max="100"
+  data-labels="Tables,Grid,Fonts,SVG"
+  data-values="94,78,86,74"
+  data-colors="#2563eb,#0f766e,#f59e0b,#7c3aed">
+</chart>
+
+<chart
+  type="stacked-bar"
+  title="Memory classes"
+  data-labels="Warm,Measured,Final"
+  data-series-labels="Heap,External,Buffers"
+  data-series="34,38,39|18,21,19|2,3,2"
+  data-colors="#2563eb,#93c5fd,#0f766e">
+</chart>
+
+<chart
+  type="sparkline"
+  title="Render trend"
+  unit=" ms"
+  data-theme="royal"
+  data-series-labels="Current,Previous"
+  data-series="95,88,93,84,87,81|101,97,96,89,91,86">
+</chart>
+```
+
+Radial charts support `data-max` for the scale and `data-center` for the centered KPI value:
+
+```html
+<chart
+  type="radial"
+  title="Radial Chart"
+  unit="%"
+  data-max="100"
+  data-center="84"
+  data-labels="Tables,Fonts,SVG,Charts"
+  data-values="92,86,74,88"
+  data-colors="#2563eb,#0f766e,#f59e0b,#7c3aed">
+</chart>
+```
+
+Stacked radial gauges render segmented semicircle progress:
+
+```html
+<chart
+  type="radial-stacked"
+  title="Runtime memory mix"
+  unit=" MB"
+  data-labels="Heap,External,Buffers"
+  data-values="38,19,2"
+  data-colors="#2563eb,#93c5fd,#0f766e">
+</chart>
+```
+
+Radar charts support multiple series through `data-series` and `data-series-labels`:
+
+```html
+<chart
+  type="radar"
+  title="Radar Chart"
+  data-max="100"
+  data-labels="Layout,Tables,Fonts,SVG,Charts,Memory"
+  data-series-labels="Desktop,Mobile"
+  data-series="84,92,88,72,90,76|68,78,82,64,74,91"
+  data-colors="#93c5fd,#2563eb">
+</chart>
+```
+
+Charts and other block content can be placed in a lightweight CSS Grid:
+
+```html
+<div class="chart-grid">
+  <chart type="line" title="Trend" data-labels="A,B,C" data-values="10,18,14"></chart>
+  <chart type="donut" title="Mix" data-labels="A,B,C" data-values="34,18,2"></chart>
+</div>
+```
+
+```css
+.chart-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+```
 
 ## Additional Exports
 
