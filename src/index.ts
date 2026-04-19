@@ -1,6 +1,8 @@
 export type {
   PageOrientation,
   ParsedCell,
+  ParsedChart,
+  ParsedChartType,
   ParsedDocument,
   ParsedFontFace,
   ParsedPageRule,

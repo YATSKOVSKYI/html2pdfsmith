@@ -521,6 +521,24 @@ await renderHtmlToPdfDetailed({
 
 With this mode Html2PdfSmith renders the table as multiple column slices. The first `repeatColumns` source columns are pinned on every slice, `thead` is repeated on every vertical page, rowspans keep their pagination behavior inside each slice, and body colspans push the horizontal break forward when they can fit in the current slice. If a body `colspan` is still too wide and crosses a horizontal slice boundary, the renderer clips it to the visible columns and emits a warning so the caller can decide whether the source table should be adjusted.
 
+## Charts
+
+Charts are rendered directly into the PDF stream. They do not require Canvas, SVG generation, JavaScript execution, or a browser:
+
+```html
+<chart
+  type="bar"
+  title="Memory profile"
+  subtitle="Warm process, render delta, and peak RSS"
+  unit=" MB"
+  data-labels="Warm RSS,Render Delta,Peak RSS"
+  data-values="250,116,366"
+  data-colors="#334155,#2563eb,#0f766e">
+</chart>
+```
+
+Supported chart types are `bar`, `line`, and `donut`. Chart blocks accept normal document styling such as `width`, `height`, `margin`, `padding`, `border`, `border-radius`, `background-color`, `box-shadow`, `font-size`, and `color`.
+
 ## Additional Exports
 
 Besides the main `renderHtmlToPdf` and `renderHtmlToPdfDetailed` functions, the library exports several utilities:

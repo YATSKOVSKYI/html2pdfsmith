@@ -1891,26 +1891,12 @@ function drawChartHeader(ctx: StreamContext, block: Extract<ParsedBlock, { type:
   return cursor + (cursor > y ? 4 : 0);
 }
 
-function drawChartLegend(ctx: StreamContext, block: Extract<ParsedBlock, { type: "chart" }>, x: number, y: number, width: number): void {
-  const maxItems = Math.min(block.chart.labels.length, block.chart.values.length, 6);
-  const itemWidth = width / Math.max(1, maxItems);
-  for (let i = 0; i < maxItems; i++) {
-    const itemX = x + i * itemWidth;
-    ctx.doc.roundedRect(itemX, y + 2, 6, 6, 1.5).fill(chartColor(block, i));
-    ctx.doc
-      .font(ctx.regularFontName)
-      .fontSize(6.4)
-      .fillColor("#64748b")
-      .text(block.chart.labels[i] ?? "", itemX + 9, y, { width: Math.max(8, itemWidth - 10), lineBreak: false });
-  }
-}
-
 function drawBarChart(ctx: StreamContext, block: Extract<ParsedBlock, { type: "chart" }>, x: number, y: number, width: number, height: number): void {
   const values = block.chart.values;
   const max = Math.max(1, ...values);
   const plotLeft = x + 30;
-  const plotBottom = y + height - 20;
-  const plotTop = y + 8;
+  const plotBottom = y + height - 18;
+  const plotTop = y + 10;
   const plotWidth = Math.max(1, width - 38);
   const plotHeight = Math.max(1, plotBottom - plotTop);
   const gap = Math.min(10, plotWidth / Math.max(1, values.length) * 0.22);
@@ -1933,8 +1919,8 @@ function drawBarChart(ctx: StreamContext, block: Extract<ParsedBlock, { type: "c
     const by = plotBottom - barHeight;
     const color = chartColor(block, i);
     fillBox(ctx, bx, by, barWidth, barHeight, color, { topLeft: 3, topRight: 3, bottomRight: 0, bottomLeft: 0 });
-    ctx.doc.font(ctx.boldFontName).fontSize(6.2).fillColor("#334155").text(String(Math.round(value)), bx - 3, by - 9, { width: barWidth + 6, align: "center", lineBreak: false });
-    ctx.doc.font(ctx.regularFontName).fontSize(5.6).fillColor("#64748b").text(block.chart.labels[i] ?? "", bx - 4, plotBottom + 4, { width: barWidth + 8, align: "center", lineBreak: false });
+    ctx.doc.font(ctx.boldFontName).fontSize(7).fillColor("#334155").text(String(Math.round(value)), bx - 5, by - 11, { width: barWidth + 10, align: "center", lineBreak: false });
+    ctx.doc.font(ctx.regularFontName).fontSize(6.3).fillColor("#64748b").text(block.chart.labels[i] ?? "", bx - 10, plotBottom + 5, { width: barWidth + 20, align: "center", lineBreak: false });
   }
   ctx.doc.restore();
 }
@@ -1946,7 +1932,7 @@ function drawLineChart(ctx: StreamContext, block: Extract<ParsedBlock, { type: "
   const range = Math.max(1, max - min);
   const plotLeft = x + 28;
   const plotRight = x + width - 8;
-  const plotTop = y + 8;
+  const plotTop = y + 10;
   const plotBottom = y + height - 20;
   const plotWidth = Math.max(1, plotRight - plotLeft);
   const plotHeight = Math.max(1, plotBottom - plotTop);
@@ -1971,6 +1957,12 @@ function drawLineChart(ctx: StreamContext, block: Extract<ParsedBlock, { type: "
   }
   for (const point of points) {
     ctx.doc.circle(point.x, point.y, 2.3).fill("#ffffff").strokeColor(chartColor(block, 0)).lineWidth(1.2).stroke();
+  }
+  ctx.doc.font(ctx.boldFontName).fontSize(6.4).fillColor("#334155");
+  for (let i = 0; i < points.length; i++) {
+    const value = values[i] ?? 0;
+    const labelY = points[i]!.y < plotTop + 12 ? points[i]!.y + 6 : points[i]!.y - 12;
+    ctx.doc.text(String(Math.round(value)), points[i]!.x - 14, labelY, { width: 28, align: "center", lineBreak: false });
   }
   ctx.doc.font(ctx.regularFontName).fontSize(5.8).fillColor("#64748b");
   for (let i = 0; i < points.length; i++) {
@@ -2041,11 +2033,10 @@ async function drawChartBlock(ctx: StreamContext, block: Extract<ParsedBlock, { 
   let cursor = drawChartHeader(ctx, block, contentX, y + border.width + padding.top, contentWidth);
   if (cursor === y + border.width + padding.top) cursor = y + border.width + padding.top;
   const plotY = cursor;
-  const plotHeight = Math.max(50, y + outerHeight - padding.bottom - border.width - plotY - 14);
+  const plotHeight = Math.max(50, y + outerHeight - padding.bottom - border.width - plotY);
   if (block.chart.chartType === "line") drawLineChart(ctx, block, contentX, plotY, contentWidth, plotHeight);
   else if (block.chart.chartType === "donut") drawDonutChart(ctx, block, contentX, plotY, contentWidth, plotHeight);
   else drawBarChart(ctx, block, contentX, plotY, contentWidth, plotHeight);
-  if (block.chart.chartType !== "donut") drawChartLegend(ctx, block, contentX, y + outerHeight - padding.bottom - 11, contentWidth);
 
   ctx.y += outerHeight + margin.bottom;
 }

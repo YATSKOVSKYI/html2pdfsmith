@@ -27,7 +27,8 @@ interface BenchmarkMetrics {
 }
 
 const targetPages = Number(Bun.argv.find((arg) => arg.startsWith("--pages="))?.split("=")[1] ?? 15);
-const dataPages = Math.max(1, targetPages - 1);
+const fixedBenchmarkPages = 4; // title, formulas, charts, metrics
+const dataPages = Math.max(1, targetPages - fixedBenchmarkPages);
 const rowsPerPage = Number(Bun.argv.find((arg) => arg.startsWith("--rows-per-page="))?.split("=")[1] ?? 12);
 const outputPath = resolve(process.cwd(), Bun.argv.find((arg) => arg.endsWith(".pdf")) ?? "examples/internal-benchmark.pdf");
 
@@ -77,8 +78,8 @@ function rowHtml(page: number, row: number): string {
   const price = 21800 + index * 335;
   const rowClass = row % 2 === 1 ? " alt" : "";
   const note = index % 4 === 0
-    ? `Long value wraps cleanly with CO<sub>2</sub>, m<sup>3</sup>/h and X<span class="shift-up">n+1</span>.`
-    : `Stable row with SVG icon, badges, colors, E=mc<span class="shift-up">2</span> and H<span class="shift-down">2</span>O.`;
+    ? "Long descriptive value wraps cleanly without clipping and keeps alignment stable."
+    : "Stable row with SVG icon, badges, zebra shading, colors and compact numeric cells.";
 
   return `<tr class="${rowClass}">
     <td class="id">BEN-${String(index).padStart(4, "0")}</td>
@@ -93,7 +94,7 @@ function rowHtml(page: number, row: number): string {
     <td class="center"><span class="badge ${status}">${statusText}</span></td>
     <td class="right">${range}<span class="unit"> km</span></td>
     <td class="right">${power}<span class="unit"> kW</span></td>
-    <td class="center">H<sub>2</sub> / LiFePO<sub>4</sub></td>
+    <td class="center">${index % 2 === 0 ? "LFP / NMC" : "LFP pack"}</td>
     <td class="right">$${price.toLocaleString("en-US")}</td>
     <td class="note">${note}</td>
   </tr>`;
@@ -138,21 +139,96 @@ function sectionTable(page: number): string {
   </section>`;
 }
 
-function metricsHtml(metrics?: BenchmarkMetrics): string {
+function coverHtml(metrics?: BenchmarkMetrics): string {
+  const pending = !metrics;
+  return `<section class="cover-page">
+    <h1>Html2PdfSmith</h1>
+    <h2>Internal Rendering Benchmark</h2>
+    <p class="cover-lead">Browserless HTML to PDF stress document for tables, charts, SVG, watermarks, page chrome, bundled fonts, rich cells, formula typography and memory reporting.</p>
+    <table class="cover-grid">
+      <tbody>
+        <tr>
+          <td class="cover-label">Document shape</td>
+          <td class="cover-label">Table body</td>
+          <td class="cover-label">Rows</td>
+          <td class="cover-label">Cells</td>
+        </tr>
+        <tr>
+          <td class="cover-value">${targetPages} pages target</td>
+          <td class="cover-value">${dataPages} sections</td>
+          <td class="cover-value">${pending ? dataPages * rowsPerPage : metrics.rows}</td>
+          <td class="cover-value">${pending ? dataPages * rowsPerPage * 8 : metrics.cells}</td>
+        </tr>
+        <tr>
+          <td class="cover-label">Runtime</td>
+          <td class="cover-label">Renderer</td>
+          <td class="cover-label">PDF pipeline</td>
+          <td class="cover-label">Warnings</td>
+        </tr>
+        <tr>
+          <td class="cover-value">Bun</td>
+          <td class="cover-value">No Chromium</td>
+          <td class="cover-value">Streaming</td>
+          <td class="cover-value">${pending ? "pending" : metrics.warnings.length === 0 ? "none" : String(metrics.warnings.length)}</td>
+        </tr>
+      </tbody>
+    </table>
+    <table class="cover-feature-grid">
+      <tbody>
+        <tr>
+          <td class="feature-key">Tables</td><td>fixed columns, zebra rows, badges, SVG icons, repeated headers</td>
+          <td class="feature-key">Charts</td><td>bar, line and donut blocks rendered directly into PDF</td>
+        </tr>
+        <tr>
+          <td class="feature-key">Typography</td><td>Anton headings, bundled fonts, sub/sup and baseline-shift</td>
+          <td class="feature-key">Production</td><td>page chrome, watermarks, RSS accounting and warning collection</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="cover-note">The benchmark is built from plain HTML. TypeScript only prepares the fixture and records metrics.</p>
+  </section>`;
+}
+
+function formulasHtml(): string {
+  return `<section class="formula-page">
+    <h1>Formula Typography</h1>
+    <p class="lead">Subscript, superscript and baseline-shift are tested here only, so regular tables stay clean.</p>
+    <table class="formula-table">
+      <thead><tr><th>Feature</th><th>HTML</th><th>Rendered sample</th><th>Use case</th></tr></thead>
+      <tbody>
+        <tr><td>Superscript</td><td>&lt;sup&gt;</td><td class="formula-sample">E = mc<sup>2</sup>, x<sup>n+1</sup></td><td>Math powers and annotations</td></tr>
+        <tr class="alt"><td>Subscript</td><td>&lt;sub&gt;</td><td class="formula-sample">H<sub>2</sub>O, CO<sub>2</sub>, LiFePO<sub>4</sub></td><td>Chemistry and engineering labels</td></tr>
+        <tr><td>Baseline up</td><td>baseline-shift: 35%</td><td class="formula-sample">Signal<span class="shift-up">+12%</span></td><td>Template-driven labels</td></tr>
+        <tr class="alt"><td>Baseline down</td><td>baseline-shift: -20%</td><td class="formula-sample">Batch<span class="shift-down">rev.2</span></td><td>SVG/CSS imported templates</td></tr>
+        <tr><td>Mixed inline</td><td>sup + sub + text</td><td class="formula-sample">m<sup>3</sup>/h, NO<sub>x</sub>, A<span class="shift-up">top</span>B<span class="shift-down">low</span></td><td>Dense technical reports</td></tr>
+      </tbody>
+    </table>
+  </section>`;
+}
+
+function chartsHtml(metrics?: BenchmarkMetrics): string {
   const pending = !metrics;
   const memoryValues = pending ? "0,0,0" : `${metrics.before.rss},${metrics.deltaPeakRss},${metrics.peakRss}`;
   const renderValues = pending
-    ? "0,0,0,0"
-    : `${Math.round(metrics.renderMs)},${Math.round(metrics.pdfBytes / 1024)},${metrics.rows},${metrics.cells}`;
+    ? "0,0,0,0,0"
+    : `${Math.round(metrics.before.rss)},${Math.round(metrics.after.rss)},${Math.round(metrics.peakRss)},${Math.round(metrics.pdfBytes / 1024)},${Math.round(metrics.renderMs / 10)}`;
   const footprintValues = pending
     ? "0,0,0"
     : `${Math.round(metrics.after.heapUsed)},${Math.round(metrics.after.external)},${Math.round(metrics.after.arrayBuffers)}`;
-  return `<section class="metrics-page">
-    <h1>Html2PdfSmith Internal Benchmark</h1>
-    <p class="lead">HTML table stress document with rich table cells, SVG, rounded badges, sub/sup, baseline-shift, page chrome, watermarks, repeated table structure, wrapping and alignment.</p>
-    <chart class="chart-card chart-memory" type="bar" title="Memory profile" subtitle="Warm process, extra render memory, and whole process peak RSS" unit=" MB" data-labels="Warm RSS,Render Delta,Peak RSS" data-values="${memoryValues}" data-colors="#334155,#2563eb,#0f766e"></chart>
-    <chart class="chart-card chart-line" type="line" title="Render workload" subtitle="Time, output size, rows, and cells in this HTML-first benchmark" data-labels="Time ms,PDF KB,Rows,Cells" data-values="${renderValues}" data-colors="#7c3aed"></chart>
+  return `<section class="charts-page">
+    <h1>Benchmark Charts</h1>
+    <p class="lead">Large chart blocks are rendered directly by Html2PdfSmith. No canvas, no JavaScript, no browser process.</p>
+    <chart class="chart-card chart-memory" type="bar" title="Memory profile" subtitle="Warm process, render delta, and whole process peak RSS" unit=" MB" data-labels="Warm,Render,Peak" data-values="${memoryValues}" data-colors="#334155,#2563eb,#0f766e"></chart>
+    <chart class="chart-card chart-line" type="line" title="Render signal" subtitle="RSS before/after, peak RSS, PDF KB, and render time divided by 10" data-labels="Before,After,Peak,PDF KB,ms/10" data-values="${renderValues}" data-colors="#7c3aed"></chart>
     <chart class="chart-card chart-donut" type="donut" title="Runtime memory mix" subtitle="Heap, external allocations and array buffers after render" unit=" MB" data-labels="Heap,External,Buffers" data-values="${footprintValues}" data-colors="#2563eb,#f59e0b,#0f766e"></chart>
+  </section>`;
+}
+
+function metricsHtml(metrics?: BenchmarkMetrics): string {
+  const pending = !metrics;
+  return `<section class="metrics-page">
+    <h1>Memory & Output</h1>
+    <p class="lead">These numbers separate a warm Bun process from extra memory used by a PDF render.</p>
     <table class="memory-table">
       <tbody>
         <tr>
@@ -205,11 +281,24 @@ function buildBenchmarkHtml(metrics?: BenchmarkMetrics): string {
     <style>
       @page { size: A4 landscape; margin: 6mm; }
       body { font-family: "Open Sans"; color: #172033; }
+      .cover-page, .formula-page, .charts-page, .metrics-page { padding: 10px 18px; }
+      .cover-page h1, .formula-page h1, .charts-page h1, .metrics-page h1 { margin: 0 0 3px; font-family: "Anton"; font-size: 31px; font-weight: 400; color: #101827; text-align: center; }
+      .cover-page h2 { margin: 0 0 12px; font-family: "Roboto Condensed"; font-size: 13px; font-weight: 700; color: #475569; text-align: center; text-transform: uppercase; }
+      .cover-lead { margin: 0 36px 22px; font-size: 11px; line-height: 1.55; color: #475569; text-align: center; }
+      .cover-grid { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 10px 0 18px; border: 1px solid #d8e0ea; }
+      .cover-grid td { border: 1px solid #d8e0ea; background-color: #f8fafc; text-align: center; }
+      .cover-label { padding: 12px 12px 4px; color: #64748b; font-size: 7.5px; text-transform: uppercase; }
+      .cover-value { padding: 4px 12px 14px; color: #0f172a; font-size: 15px; font-weight: 800; }
+      .cover-feature-grid { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 18px 0 14px; border: 1px solid #d8e0ea; }
+      .cover-feature-grid td { padding: 12px 14px; border: 1px solid #d8e0ea; font-size: 8.5px; line-height: 1.4; }
+      .feature-key { background-color: #e7edf6; color: #172033; font-family: "Roboto Condensed"; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+      .cover-note { margin-top: 20px; font-size: 9px; color: #64748b; text-align: center; }
       .bench-page { padding-top: 2px; }
-      .bench-table { width: 100%; table-layout: fixed; border-collapse: collapse; border: 1px solid #d5dce7; }
-      th { padding: 5px 5px; border: 1px solid #b8c4d3; background-color: #e9eff7; color: #172033; font-family: "Roboto Condensed"; font-size: 8px; font-weight: 700; text-transform: uppercase; text-align: center; }
-      td { padding: 3px 5px; border: 1px solid #d9e0ea; font-size: 6.9px; line-height: 1.14; vertical-align: middle; }
-      tr.alt td { background-color: #fbfcfe; }
+      .bench-table { width: 100%; table-layout: fixed; border-collapse: collapse; border: 1px solid #cfd8e6; }
+      th { padding: 5px 5px; border: 1px solid #b8c4d3; background-color: #e7edf6; color: #172033; font-family: "Roboto Condensed"; font-size: 8px; font-weight: 700; text-transform: uppercase; text-align: center; }
+      td { padding: 3px 5px; border: 1px solid #d8e1ec; font-size: 6.9px; line-height: 1.14; vertical-align: middle; }
+      tr.alt td { background-color: #f2f6fb; }
+      .bench-table tbody tr:not(.alt):not(.section-row) td { background-color: #ffffff; }
       .section-row td { padding: 6px 9px; background-color: #172033; color: #ffffff; font-family: "Roboto Condensed"; font-size: 9px; font-weight: 700; text-align: left; text-transform: uppercase; }
       .id { font-family: "Noto Sans"; color: #42526a; white-space: nowrap; }
       .model { padding: 4px; }
@@ -228,26 +317,34 @@ function buildBenchmarkHtml(metrics?: BenchmarkMetrics): string {
       .note { color: #475569; overflow-wrap: break-word; }
       .shift-up { baseline-shift: 35%; font-size: 70%; color: #0f766e; }
       .shift-down { baseline-shift: -20%; font-size: 70%; color: #9a3412; }
-      .metrics-page { padding: 8px 18px; }
-      .metrics-page h1 { margin: 0 0 4px; font-family: "Anton"; font-size: 23px; font-weight: 400; color: #111827; text-align: center; }
-      .lead { margin: 0 0 7px; font-size: 7.8px; color: #5b677a; text-align: center; line-height: 1.3; }
-      .chart-card { height: 58px; margin-bottom: 5px; padding: 7px 10px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 5px 14px rgba(15, 23, 42, 0.10); }
-      .chart-line { height: 52px; }
-      .chart-donut { height: 54px; }
+      .lead { margin: 0 0 12px; font-size: 8.5px; color: #5b677a; text-align: center; line-height: 1.35; }
+      .formula-table { width: 100%; table-layout: fixed; border-collapse: collapse; border: 1px solid #d8e0ea; margin-top: 18px; }
+      .formula-table th { padding: 9px 8px; font-size: 8.5px; background-color: #172033; color: #ffffff; }
+      .formula-table td { padding: 13px 12px; font-size: 10px; line-height: 1.55; }
+      .formula-sample { font-size: 14px; text-align: center; color: #0f172a; }
+      .charts-page .chart-card { height: 112px; margin-bottom: 12px; padding: 13px 16px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 5px 14px rgba(15, 23, 42, 0.10); }
+      .charts-page .chart-line { height: 104px; }
+      .charts-page .chart-donut { height: 102px; }
       .memory-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 0 0 8px; border: 1px solid #cbd5e1; }
-      .memory-title { padding: 6px 8px; background-color: #172033; color: #ffffff; font-family: "Roboto Condensed"; font-size: 9px; font-weight: 700; text-transform: uppercase; }
-      .memory-label { padding: 7px 8px; background-color: #eef3f8; color: #475569; font-size: 7px; font-weight: 700; text-transform: uppercase; }
-      .memory-value { padding: 7px 8px; color: #0f172a; font-size: 11px; font-weight: 800; }
-      .memory-note { padding: 8px; background-color: #f8fafc; color: #475569; font-size: 7.5px; line-height: 1.35; }
-      .metric-grid { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 5px 0 8px; border: 0; }
-      .metric { padding: 7px 8px; border: 4px solid #ffffff; border-radius: 8px; background-color: #f8fafc; }
-      .metric-label { color: #64748b; font-size: 7px; text-transform: uppercase; }
-      .metric strong { color: #0f172a; font-size: 10.5px; }
-      .footnote { margin-top: 0; margin-bottom: 0; color: #64748b; font-size: 6.8px; text-align: center; }
+      .memory-title { padding: 10px 10px; background-color: #172033; color: #ffffff; font-family: "Roboto Condensed"; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+      .memory-label { padding: 12px 10px; background-color: #eef3f8; color: #475569; font-size: 8px; font-weight: 700; text-transform: uppercase; }
+      .memory-value { padding: 12px 10px; color: #0f172a; font-size: 14px; font-weight: 800; }
+      .memory-note { padding: 10px; background-color: #f8fafc; color: #475569; font-size: 8.5px; line-height: 1.4; }
+      .metric-grid { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 14px 0 8px; border: 0; }
+      .metric { padding: 15px 12px; border: 5px solid #ffffff; border-radius: 8px; background-color: #f8fafc; }
+      .metric-label { color: #64748b; font-size: 7.5px; text-transform: uppercase; }
+      .metric strong { color: #0f172a; font-size: 13px; }
+      .footnote { margin-top: 12px; margin-bottom: 0; color: #64748b; font-size: 7.5px; text-align: center; }
     </style>
   </head>
   <body>
+    ${coverHtml(metrics)}
+    <div style="page-break-after: always"></div>
     ${dataSections}
+    <div style="page-break-after: always"></div>
+    ${formulasHtml()}
+    <div style="page-break-after: always"></div>
+    ${chartsHtml(metrics)}
     <div style="page-break-after: always"></div>
     ${metricsHtml(metrics)}
   </body>
