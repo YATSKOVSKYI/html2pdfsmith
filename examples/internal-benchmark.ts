@@ -409,100 +409,90 @@ function advancedChartsHtml(metrics?: BenchmarkMetrics): string {
 function metricsHtml(metrics?: BenchmarkMetrics): string {
   const pending = !metrics;
   const derived = metrics ? derivedMetrics(metrics) : undefined;
-  return `<section class="metrics-page">
-    <h1>Memory & Output</h1>
-    <p class="lead">A table-first production readout for Bun process memory, render cost, output size and document volume.</p>
-    <table class="memory-hero-table">
-      <colgroup><col style="width: 46%"><col style="width: 18%"><col style="width: 18%"><col style="width: 18%"></colgroup>
+
+  // --- Chart data ---
+  const memoryValues = pending
+    ? "0,0,0"
+    : `${metrics.before.rss},${metrics.deltaPeakRss},${metrics.peakRss}`;
+  const runtimeMixValues = pending
+    ? "38,19,2"
+    : `${Math.round(metrics.after.heapUsed)},${Math.round(metrics.after.external)},${Math.round(metrics.after.arrayBuffers)}`;
+  const radarSeries = pending
+    ? "82,68,76,88,62"
+    : `${Math.min(100, Math.round(100 - derived!.msPerPage / 4))},${Math.min(100, Math.round(100 - derived!.kbPerPage / 2))},${Math.min(100, Math.round(derived!.outputRatio * 10))},${Math.min(100, Math.round(100 - metrics.deltaPeakRss / 3))},${Math.min(100, Math.round(100 - derived!.externalShare))}`;
+  const budgetValue = pending ? "0" : String(Math.round(metrics.deltaPeakRss));
+  const budgetMax = Math.max(120, pending ? 140 : Math.ceil(Math.max(120, metrics.deltaPeakRss * 1.35) / 10) * 10);
+  const throughputValues = pending
+    ? "0,0,0,0"
+    : `${Math.round(derived!.rowsPerSecond)},${Math.round(derived!.cellsPerSecond)},${Math.round(metrics.rows)},${Math.round(metrics.cells)}`;
+  const densityValues = pending
+    ? "0,0,0,0"
+    : `${Math.round(derived!.pdfKb)},${Math.round(derived!.htmlKb)},${Math.round(derived!.kbPerPage * 10)},${Math.round(derived!.bytesPerCell)}`;
+
+  const charts: ChartDashboardCard[] = [
+    { type: "bar", title: "Memory envelope", subtitle: "Warm RSS, render delta and peak", unit: " MB", theme: "ocean", labels: "Warm,Delta,Peak", values: memoryValues },
+    { type: "donut", title: "Runtime mix", subtitle: "V8 heap, external and array buffers", unit: " MB", theme: "emerald", labels: "Heap,External,Buffers", values: runtimeMixValues },
+    { type: "radar", title: "System profile", subtitle: "Relative quality score", theme: "royal", labels: "Speed,Size,Ratio,RAM,Ext", values: radarSeries, max: 100 },
+    { type: "gauge", title: "Render budget", subtitle: "Extra RSS against dynamic ceiling", unit: " MB", theme: "graphite", max: budgetMax, values: budgetValue, center: budgetValue },
+    { type: "horizontal-bar", title: "Throughput", subtitle: "Rows/sec, cells/sec and document volume", theme: "aurora", labels: "Rows/sec,Cells/sec,Rows,Cells", values: throughputValues },
+    { type: "horizontal-bar", title: "Output density", subtitle: "PDF KB, HTML KB, KB/page ×10, bytes/cell", theme: "sunset", labels: "PDF KB,HTML KB,KB/pg ×10,B/cell", values: densityValues },
+  ];
+
+  const chartDashboard = createChartDashboardHtml({
+    className: "metrics-page",
+    gridClassName: "chart-dashboard-grid",
+    cardClassName: "chart-dashboard-card",
+    includeStyles: false,
+    title: "Memory & Output",
+    lead: "Six panels summarize memory envelope, runtime mix, system profile, render budget, throughput and output density.",
+    charts,
+  });
+
+  // --- Data summary section (same page, below charts) ---
+  const dataSummary = `
+    <table class="cover-grid" style="margin: 14px 0 12px;">
       <tbody>
         <tr>
-          <td class="memory-story-cell">
-            <span>Browserless render pass</span>
-            <strong>RSS belongs to the Bun process only</strong>
-            <p>Html2PdfSmith does not start Chromium. With a browser renderer, count the server process and the separate browser process together.</p>
-          </td>
-          <td class="memory-kpi-cell accent-blue"><span>Render time</span><strong>${pending ? "pending" : formatMs(metrics.renderMs)}</strong></td>
-          <td class="memory-kpi-cell accent-green"><span>Extra memory</span><strong>${pending ? "pending" : formatMb(metrics.deltaPeakRss)}</strong></td>
-          <td class="memory-kpi-cell accent-orange"><span>PDF size</span><strong>${pending ? "pending" : formatKb(metrics.pdfBytes / 1024)}</strong></td>
+          <td class="cover-label">Render Time</td>
+          <td class="cover-label">Extra Memory</td>
+          <td class="cover-label">PDF Payload</td>
+          <td class="cover-label">Pages</td>
+        </tr>
+        <tr>
+          <td class="cover-value">${pending ? "pending" : formatMs(metrics.renderMs)}</td>
+          <td class="cover-value">${pending ? "pending" : formatMb(metrics.deltaPeakRss)}</td>
+          <td class="cover-value">${pending ? "pending" : formatKb(metrics.pdfBytes / 1024)}</td>
+          <td class="cover-value">${pending ? "pending" : metrics.pages}</td>
         </tr>
       </tbody>
     </table>
-    <table class="memory-accounting-table">
-      <colgroup><col style="width: 22%"><col style="width: 16%"><col style="width: 31%"><col style="width: 31%"></colgroup>
-      <thead>
-        <tr><th colspan="4">Memory accounting</th></tr>
-        <tr><td>Stage</td><td>Measured</td><td>Meaning</td><td>Operational read</td></tr>
-      </thead>
+    <table class="cover-feature-grid" style="margin: 0 0 12px;">
       <tbody>
         <tr>
-          <td class="memory-stage warm">Warm Bun process</td>
-          <td class="memory-measure">${pending ? "pending" : formatMb(metrics.before.rss)}</td>
-          <td>Resident memory before the PDF render starts.</td>
-          <td>Baseline server memory that already exists before Html2PdfSmith writes the PDF.</td>
-        </tr>
-        <tr class="alt">
-          <td class="memory-stage extra">Extra memory</td>
-          <td class="memory-measure">${pending ? "pending" : formatMb(metrics.deltaPeakRss)}</td>
-          <td>Additional RSS observed while rendering this document.</td>
-          <td>This is the most useful number for deciding render capacity per worker.</td>
+          <td class="feature-key">Warm RSS</td><td class="id">${pending ? "pending" : formatMb(metrics.before.rss)}</td>
+          <td class="feature-key">Peak RSS</td><td class="id">${pending ? "pending" : formatMb(metrics.peakRss)}</td>
         </tr>
         <tr>
-          <td class="memory-stage peak">Peak Bun process</td>
-          <td class="memory-measure">${pending ? "pending" : formatMb(metrics.peakRss)}</td>
-          <td>Highest observed Bun process memory during this pass.</td>
-          <td>No separate browser process is hidden behind this number.</td>
+          <td class="feature-key">V8 Heap</td><td class="id">${pending ? "pending" : formatMb(metrics.after.heapUsed)}</td>
+          <td class="feature-key">External</td><td class="id">${pending ? "pending" : formatMb(metrics.after.external)}</td>
         </tr>
-        <tr class="alt">
-          <td class="memory-stage after">After render</td>
-          <td class="memory-measure">${pending ? "pending" : formatMb(metrics.after.rss)}</td>
-          <td>Process memory after PDF bytes are written.</td>
-          <td>Shows retained process footprint after the render has completed.</td>
+        <tr>
+          <td class="feature-key">Buffers</td><td class="id">${pending ? "pending" : formatMb(metrics.after.arrayBuffers)}</td>
+          <td class="feature-key">Retained</td><td class="id">${pending ? "pending" : formatMb(metrics.after.rss)}</td>
+        </tr>
+        <tr>
+          <td class="feature-key">Rows / sec</td><td class="id">${pending ? "pending" : formatNumber(derived!.rowsPerSecond, 0)}</td>
+          <td class="feature-key">Cells / sec</td><td class="id">${pending ? "pending" : formatNumber(derived!.cellsPerSecond, 0)}</td>
+        </tr>
+        <tr>
+          <td class="feature-key">Rows</td><td class="id">${pending ? "pending" : formatNumber(metrics.rows)}</td>
+          <td class="feature-key">Cells</td><td class="id">${pending ? "pending" : formatNumber(metrics.cells)}</td>
         </tr>
       </tbody>
-    </table>
-    <table class="memory-detail-table">
-      <tbody>
-        <tr>
-          <td><span>Heap used</span><strong>${pending ? "pending" : formatMb(metrics.after.heapUsed)}</strong><p>${pending ? "pending" : `${formatNumber(derived!.heapShare, 0)}% of tracked runtime allocation.`}</p></td>
-          <td><span>External memory</span><strong>${pending ? "pending" : formatMb(metrics.after.external)}</strong><p>${pending ? "pending" : `${formatNumber(derived!.externalShare, 0)}% of tracked runtime allocation.`}</p></td>
-          <td><span>Array buffers</span><strong>${pending ? "pending" : formatMb(metrics.after.arrayBuffers)}</strong><p>${pending ? "pending" : `${formatNumber(derived!.bufferShare, 0)}% of tracked runtime allocation.`}</p></td>
-          <td><span>Document volume</span><strong>${pending ? "pending" : `${metrics.pages} pages`}</strong><p>${pending ? "pending" : `${formatNumber(metrics.rows)} rows and ${formatNumber(metrics.cells)} cells.`}</p></td>
-        </tr>
-      </tbody>
-    </table>
-    <table class="memory-output-table">
-      <colgroup><col style="width: 16%"><col style="width: 17%"><col style="width: 17%"><col style="width: 16%"><col style="width: 17%"><col style="width: 17%"></colgroup>
-      <thead>
-        <tr><th colspan="6">Output and throughput</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td class="memory-label-cell">PDF size</td>
-          <td class="memory-number-cell">${pending ? "pending" : formatKb(metrics.pdfBytes / 1024)}</td>
-          <td class="memory-label-cell">HTML size</td>
-          <td class="memory-number-cell">${pending ? "pending" : formatKb(metrics.htmlBytes / 1024)}</td>
-          <td class="memory-label-cell">Warnings</td>
-          <td class="memory-number-cell">${pending ? "pending" : metrics.warnings.length === 0 ? "none" : String(metrics.warnings.length)}</td>
-        </tr>
-        <tr class="alt">
-          <td class="memory-label-cell">Rows each second</td>
-          <td class="memory-number-cell">${pending ? "pending" : formatNumber(derived!.rowsPerSecond, 0)}</td>
-          <td class="memory-label-cell">Cells each second</td>
-          <td class="memory-number-cell">${pending ? "pending" : formatNumber(derived!.cellsPerSecond, 0)}</td>
-          <td class="memory-label-cell">Render time</td>
-          <td class="memory-number-cell">${pending ? "pending" : formatMs(metrics.renderMs)}</td>
-        </tr>
-        <tr>
-          <td class="memory-label-cell">Pages</td>
-          <td class="memory-number-cell">${pending ? targetPages : `${metrics.pages} of ${metrics.targetPages}`}</td>
-          <td class="memory-label-cell">Rows</td>
-          <td class="memory-number-cell">${pending ? "pending" : formatNumber(metrics.rows)}</td>
-          <td class="memory-label-cell">Cells</td>
-          <td class="memory-number-cell">${pending ? "pending" : formatNumber(metrics.cells)}</td>
-        </tr>
-      </tbody>
-    </table>
-  </section>`;
+    </table>`;
+
+  // Inject data summary after the chart grid closes
+  return chartDashboard.replace(/<\/section>$/, `${dataSummary}\n  </section>`);
 }
 
 function buildBenchmarkHtml(metrics?: BenchmarkMetrics): string {
@@ -564,40 +554,6 @@ function buildBenchmarkHtml(metrics?: BenchmarkMetrics): string {
       .radial-card { height: 176px; margin-bottom: 0; padding: 12px 14px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 12px 28px -10px rgba(15, 23, 42, 0.20); }
       .advanced-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 12px; }
       .advanced-card { height: 184px; margin-bottom: 0; padding: 12px 14px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #ffffff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 12px 28px -10px rgba(15, 23, 42, 0.20); }
-      .memory-hero-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 10px 0; border: 0; }
-      .memory-hero-table td { height: 84px; border: 5px solid #ffffff; border-radius: 8px; vertical-align: top; }
-      .memory-story-cell { padding: 13px 16px; background-color: #101827; color: #ffffff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12), 0 16px 32px -12px rgba(15, 23, 42, 0.32); }
-      .memory-story-cell span { display: block; color: #7dd3fc; font-size: 7.4px; font-weight: 800; text-transform: uppercase; }
-      .memory-story-cell strong { display: block; margin: 5px 0 6px; font-family: "Roboto Condensed"; font-size: 17px; color: #ffffff; }
-      .memory-story-cell p { margin: 0; color: #cbd5e1; font-size: 8.4px; line-height: 1.36; }
-      .memory-kpi-cell { padding: 12px 12px; background-color: #ffffff; border: 1px solid #d8e0ea; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 12px 26px -12px rgba(15, 23, 42, 0.24); }
-      .memory-kpi-cell span { display: block; margin-bottom: 18px; color: #64748b; font-size: 7.2px; font-weight: 800; text-transform: uppercase; }
-      .memory-kpi-cell strong { display: block; color: #0f172a; font-size: 15px; font-weight: 900; }
-      .accent-blue { border-top: 4px solid #2563eb; }
-      .accent-green { border-top: 4px solid #0f766e; }
-      .accent-orange { border-top: 4px solid #f97316; }
-      .memory-accounting-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 10px 0; border: 1px solid #cbd5e1; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06); }
-      .memory-accounting-table th { padding: 10px 12px; border: 1px solid #172033; background-color: #172033; color: #ffffff; font-family: "Roboto Condensed"; font-size: 10px; font-weight: 800; text-align: left; text-transform: uppercase; }
-      .memory-accounting-table thead td { padding: 8px 10px; border: 1px solid #bfdbfe; background-color: #dbeafe; color: #1e3a8a; font-size: 7.6px; font-weight: 900; text-transform: uppercase; }
-      .memory-accounting-table tbody td { padding: 9px 10px; border: 1px solid #d8e1ec; background-color: #ffffff; color: #334155; font-size: 8.1px; line-height: 1.32; }
-      .memory-accounting-table tbody tr.alt td { background-color: #f8fafc; }
-      .memory-stage { color: #0f172a !important; font-family: "Roboto Condensed"; font-size: 9.2px !important; font-weight: 900; text-transform: uppercase; }
-      .memory-stage.warm { border-left: 5px solid #2563eb; }
-      .memory-stage.extra { border-left: 5px solid #0f766e; }
-      .memory-stage.peak { border-left: 5px solid #f97316; }
-      .memory-stage.after { border-left: 5px solid #7c3aed; }
-      .memory-measure { color: #0f172a !important; font-size: 11px !important; font-weight: 900; white-space: nowrap; }
-      .memory-detail-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 9px 0; border: 0; }
-      .memory-detail-table td { height: 62px; padding: 10px 12px; border: 5px solid #ffffff; border-radius: 8px; background-color: #f8fafc; vertical-align: top; }
-      .memory-detail-table span { display: block; color: #64748b; font-size: 7.2px; font-weight: 800; text-transform: uppercase; }
-      .memory-detail-table strong { display: block; margin: 5px 0 4px; color: #0f172a; font-size: 12.5px; font-weight: 900; }
-      .memory-detail-table p { margin: 0; color: #64748b; font-size: 7.2px; line-height: 1.24; }
-      .memory-output-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 9px 0; border: 1px solid #cbd5e1; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06); }
-      .memory-output-table th { padding: 10px 12px; border: 1px solid #0f766e; background-color: #0f766e; color: #ffffff; font-family: "Roboto Condensed"; font-size: 10px; font-weight: 800; text-align: left; text-transform: uppercase; }
-      .memory-output-table td { padding: 8px 10px; border: 1px solid #d8e1ec; background-color: #ffffff; vertical-align: middle; }
-      .memory-output-table tr.alt td { background-color: #f2f7fb; }
-      .memory-label-cell { color: #64748b; font-size: 7.4px; font-weight: 900; text-transform: uppercase; }
-      .memory-number-cell { color: #0f172a; font-size: 10.5px; font-weight: 900; white-space: nowrap; }
     </style>
   </head>
   <body>
