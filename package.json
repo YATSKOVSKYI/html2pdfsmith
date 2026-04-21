@@ -40,6 +40,7 @@
     "example:visual-css": "bun run examples/visual-css-controls.ts",
     "example:production-layout": "bun run examples/production-layout-controls.ts",
     "example:inline-badges": "bun run examples/inline-badges.ts",
+    "example:error-handling": "bun run examples/error-handling.ts",
     "example:comparison-showcase": "bun run examples/comparison-table-showcase.ts",
     "example:html-file": "bun run examples/render-html-file.ts examples/fixtures/comparison-rich-table.html tmp/pdfs/comparison-rich-table.from-html.pdf",
     "example:autocore": "bun run examples/autocore-invoice.ts",

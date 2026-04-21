@@ -11,7 +11,7 @@
   <a href="https://www.npmjs.com/package/html2pdfsmith"><img src="https://img.shields.io/npm/v/html2pdfsmith?style=flat-square&color=cb3837&logo=npm&logoColor=white" alt="npm"/></a>
   <a href="#quickstart"><img src="https://img.shields.io/badge/Bun-%3E%3D1.2.0-f472b6?style=flat-square&logo=bun&logoColor=white" alt="Bun >= 1.2.0"/></a>
   <a href="#api"><img src="https://img.shields.io/badge/TypeScript-first-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript first"/></a>
-  <a href="#performance"><img src="https://img.shields.io/badge/incremental_RSS-~46_MB-22c55e?style=flat-square" alt="~46 MB incremental RSS"/></a>
+  <a href="#performance"><img src="https://img.shields.io/badge/incremental_RSS-~63_MB-22c55e?style=flat-square" alt="~63 MB incremental RSS"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-818cf8?style=flat-square" alt="MIT"/></a>
 </p>
 
@@ -21,7 +21,7 @@
 
 Most HTML-to-PDF stacks render through Chromium. That gives broad web compatibility, but it also brings browser startup, large binaries, and high memory use.
 
-Html2PdfSmith is a different tradeoff: it is a document renderer for predictable printable HTML. It parses HTML, extracts a pragmatic CSS subset, lays out pages, and writes PDF directly through a streaming PDFKit pipeline.
+Html2PdfSmith is a different tradeoff: it is a document renderer for predictable printable HTML. It parses HTML, applies a pragmatic print-focused CSS subset, lays out pages, and writes PDF directly through a streaming PDFKit pipeline.
 
 | Area | Browser-based renderers | Html2PdfSmith |
 |---|---:|---:|
@@ -30,41 +30,35 @@ Html2PdfSmith is a different tradeoff: it is a document renderer for predictable
 | Best fit | Arbitrary web pages | Reports, invoices, tables, branded PDFs |
 | JavaScript execution | Yes | No |
 | CSS scope | Browser CSS engine | Practical document CSS subset |
-| Typical benchmark | Hundreds of MB RSS | ~46 MB incremental RSS for 10x100 table |
+| Typical benchmark | Hundreds of MB RSS | ~63 MB incremental RSS for 10x100 table |
 
 Html2PdfSmith is not trying to be a full browser. It is trying to be a small, controllable, production-friendly HTML-to-PDF engine.
 
+Use it when you own the template and want stable PDF output for reports, invoices, tables, dashboards, statements, price lists, or branded printable documents. Do not use it to screenshot arbitrary websites, run client-side JavaScript, or expect browser-perfect CSS compatibility.
+
 ## Features
 
-- A4 and Letter pages
-- portrait, landscape, and automatic orientation
-- page headers, page footers, and streaming page numbers
-- document headings, paragraphs, div/section text blocks, lists, blockquotes, pre/code blocks, links, horizontal rules
-- inline rich text: `strong`, `b`, `em`, `i`, `u`, `s`, `del`, `sup`, `sub`, `span style`, `a href`, `code`
-- inline badges/chips with `display: inline-block`, padding, borders, rounded backgrounds, and text transforms
-- block boxes with margins, padding, borders, background colors, and line-height
-- lightweight CSS Grid for document blocks: `display: grid`, `grid-template-columns`, `gap`, `row-gap`, and `column-gap`
-- tables with repeated headers, horizontal wide-table pagination, `thead`, `tbody`, `tfoot`, `colspan`, and basic `rowspan`
-- rich table cells with nested boxes, headings, paragraphs, images, and absolute corner badges
-- table CSS: `border`, `border-width`, `border-color`, `padding`, `border-collapse: collapse`
-- row and cell CSS: `background-color`, `color`, `font-size`, `font-weight`, `text-align`, `vertical-align`, `height`, `min-height`
-- cell image CSS: `width`, `height`, `object-fit`, `object-position`
-- cross-platform image transforms: `transform`, `transform-origin`, `-webkit-transform`, `-webkit-transform-origin`, `opacity`
-- table layout controls: `colgroup`, `table-layout: fixed`, `white-space`, `text-overflow: ellipsis`
-- per-side borders: `border-top`, `border-right`, `border-bottom`, `border-left`, dashed and dotted lines
-- visual CSS: `background-image`, `background-size`, `background-position`, `background-repeat`, `border-radius`, per-corner radius, multi-layer `box-shadow`, `text-transform`
-- inline visual CSS: `display: inline-block`, `padding`, `border`, `border-radius`, `background-color`
-- print CSS: `@media print` / `@media all` rules are applied, `@media screen` rules are ignored
-- content-aware `table-layout: auto` for tables without explicit `colgroup` widths
-- image support for PNG, JPEG, SVG, data URLs, local files, and HTTP(S) URLs
-- browserless charts through HTML `<chart>` blocks: bar, horizontal-bar, stacked-bar, line/area, sparkline, pie, donut, gauge, radial, radial-stacked, and radar charts
-- PNG/JPEG natural aspect-ratio handling when only width or height is provided
-- text and image watermarks
-- custom font paths, font bytes, optional bundled fonts, optional Google Fonts disk cache, and optional system font discovery
-- optional `qpdf` owner-password protection
-- warnings API for non-fatal rendering issues
+- Browserless renderer: no Chromium, no Puppeteer, no Playwright, no DOM runtime.
+- Streaming PDF output through PDFKit with a low-memory render path.
+- A4 and Letter pages with portrait, landscape, or automatic orientation.
+- Page headers, page footers, text/image watermarks, and streaming page numbers.
+- Document blocks: headings, paragraphs, sections, lists, blockquotes, `pre`/`code`, links, images, horizontal rules, and page breaks.
+- Inline rich text: `strong`, `em`, `u`, `s`, `sup`, `sub`, inline `code`, links, styled spans, and inline badge/chip boxes.
+- Practical CSS support for print documents: margins, padding, borders, colors, backgrounds, border radius, shadows, line-height, text alignment, text transforms, overflow wrapping, nowrap, pre-wrap, and ellipsis.
+- Lightweight document grids with `display: grid`, `grid-template-columns`, `gap`, `row-gap`, and `column-gap`.
+- Production table rendering: repeated headers, `thead`/`tbody`/`tfoot`, `colgroup`, `colspan`, basic `rowspan`, fixed and auto table layout, vertical alignment, per-side borders, and row/cell heights.
+- Wide table pagination: split very wide tables into horizontal page slices with repeated left columns.
+- Rich table cells with nested boxes, headings, paragraphs, images, clipped rounded content, and bounded absolute badges.
+- Images from PNG, JPEG, SVG, data URLs, local files, and HTTP(S) URLs, including aspect-ratio handling, `object-fit`, `object-position`, opacity, and PDF-native transforms.
+- Browserless charts through declarative `<chart>` blocks: bar, horizontal-bar, stacked-bar, line, area, sparkline, pie, donut, gauge, radial, radial-stacked, and radar.
+- Fonts through explicit file paths, in-memory bytes, CSS `@font-face`, optional bundled fonts, optional Google Fonts disk cache, and optional system font discovery.
+- Resource loading policy for HTTP/file/data access, timeouts, and max CSS/image/font sizes.
+- Optional `qpdf` owner-password protection.
+- Warnings API for non-fatal rendering issues.
 
 ## Quickstart
+
+Html2PdfSmith targets Bun applications and libraries. The package is ESM-only and expects Bun `>=1.2.0`.
 
 ```bash
 npm install html2pdfsmith
@@ -99,6 +93,8 @@ const pdf = await renderHtmlToPdf({
 
 await Bun.write("report.pdf", pdf);
 ```
+
+For Node.js-only server processes, treat Html2PdfSmith as a Bun-side renderer for now. The public API returns standard `Uint8Array` PDF bytes, but the current implementation and examples use Bun APIs.
 
 ## Full Example
 
@@ -200,6 +196,83 @@ interface RenderHtmlToPdfResult {
 
 `{total}` page counts are intentionally not resolved by the default streaming renderer. Use `{page}` for low-memory page numbers. Total page counts require buffering pages or a second pass.
 
+### Error Handling
+
+Html2PdfSmith separates fatal render failures from recoverable document problems.
+
+Most template/resource issues are non-fatal. The renderer keeps producing a PDF and reports them through `result.warnings` and the optional `onWarning` callback:
+
+```ts
+const result = await renderHtmlToPdfDetailed({
+  html,
+  baseUrl: "./public",
+  resourcePolicy: { allowHttp: false, allowFile: true },
+  onWarning(warning) {
+    console.warn(`[${warning.code}] ${warning.message}`);
+  },
+});
+
+if (result.warnings.length > 0) {
+  // Store, inspect, or fail your own job depending on policy.
+}
+```
+
+Common warning cases:
+
+| Warning | Meaning |
+|---|---|
+| `font_fallback` | No usable custom font was registered, so the renderer fell back to a built-in PDF font |
+| `font_register_failed` / `font_face_register_failed` | A configured font path, font bytes, or CSS `@font-face` could not be registered |
+| `google_font_download_failed` | Google Fonts could not be downloaded; cached or fallback fonts may be used instead |
+| `image_load_failed` / `image_embed_failed` / `image_draw_failed` | An image was blocked, missing, unsupported, or failed during PDF drawing |
+| `stylesheet_load_failed` | A linked or configured stylesheet could not be loaded |
+| `page_total_unsupported_streaming` | `{total}` was requested in page numbers; streaming mode keeps memory low and prints `?` |
+| `table_row_too_tall` | A table row is taller than a fresh page and must be rendered sequentially |
+| `table_rowspan_group_too_tall` | Rows connected by `rowspan` cannot fit together on a fresh page |
+| `table_colspan_horizontal_split` | A wide `colspan` crossed a horizontal table slice boundary |
+| `qpdf_failed` | PDF protection failed; the unprotected PDF is returned with a warning |
+
+Resource policy failures are warnings by default. For example, if `allowHttp: false` blocks an HTTP image, the image is omitted and the PDF still renders. If your production policy must fail closed, throw from `onWarning`:
+
+```ts
+await renderHtmlToPdfDetailed({
+  html,
+  resourcePolicy: { allowHttp: false, allowFile: true, allowData: true },
+  onWarning(warning) {
+    if (
+      warning.code.endsWith("_load_failed") ||
+      warning.code === "qpdf_failed" ||
+      warning.code === "font_fallback"
+    ) {
+      throw new Error(`PDF render rejected: ${warning.code}: ${warning.message}`);
+    }
+  },
+});
+```
+
+Unexpected renderer bugs, invalid runtime state, and exceptions thrown from your own `onWarning` callback reject the render promise. The package exports error classes for callers that want typed handling:
+
+```ts
+import {
+  Html2PdfError,
+  ResourcePolicyError,
+  ResourceLoadError,
+  FontLoadError,
+  PdfProtectionError,
+  renderHtmlToPdfDetailed,
+} from "html2pdfsmith";
+
+try {
+  const result = await renderHtmlToPdfDetailed({ html });
+  await Bun.write("report.pdf", result.pdf);
+} catch (error) {
+  if (error instanceof Html2PdfError) {
+    console.error(error.name, error.message);
+  }
+  throw error;
+}
+```
+
 ### Resource Loading
 
 Use `baseUrl` when the HTML contains relative resources:
@@ -287,7 +360,7 @@ Html2PdfSmith supports a document-oriented HTML subset:
 - `ul`, `ol`, `li`
 - `table`, `thead`, `tbody`, `tfoot`, `colgroup`, `col`, `tr`, `th`, `td`
 - `img`, `hr`, `br`
-- `chart` for built-in PDF-rendered bar, line, and donut charts
+- `chart` for built-in PDF-rendered charts: bar, horizontal-bar, stacked-bar, line, area, sparkline, pie, donut, gauge, radial, radial-stacked, and radar
 - `link rel="stylesheet"`, `style`
 - text nodes
 
@@ -359,9 +432,10 @@ Out of scope for now:
 
 - arbitrary web pages
 - JavaScript execution
-- Flexbox and Grid
-- fixed/absolute positioning
-- CSS transforms and animations
+- full Flexbox layout
+- full browser-compatible CSS Grid; only the lightweight document grid described above is supported
+- general fixed/absolute page positioning; only bounded rich-cell absolute badges are supported
+- CSS animations and browser visual effects
 - full browser-compatible cascade and layout
 
 ## Paged Documents
@@ -695,7 +769,7 @@ import {
   convertHtmlToPdf,
   convertHtmlToPdfDetailed,
 
-  // HTML parser — returns the structured ParsedDocument
+  // HTML parser - returns the structured ParsedDocument
   parsePrintableHtml,
 
   // Dashboard HTML helper for reusable chart grids
@@ -746,6 +820,10 @@ For Latin-only documents, the default built-in PDF fonts are the lightest option
 For production documents, prefer bundled fonts, explicit fonts, or Google Fonts.
 
 Bundled fonts are best when production must render offline without first-run network downloads:
+
+```bash
+bun add @html2pdfsmith/fonts
+```
 
 ```ts
 import { renderHtmlToPdfDetailed } from "html2pdfsmith";
@@ -830,8 +908,8 @@ Current local benchmark on Windows/Bun for a 10-column, 100-row table with a tex
 ```json
 {
   "pages": 6,
-  "ms": 118,
-  "deltaPeakRssMb": 46.4
+  "ms": 192,
+  "deltaPeakRssMb": 63.2
 }
 ```
 
@@ -847,6 +925,18 @@ For a heavier visual benchmark, generate a styled 15-page HTML table document wi
 bun run bench:internal
 ```
 
+Recent local `bench:internal` run:
+
+```json
+{
+  "pages": 16,
+  "measuredRenderMs": 743,
+  "measuredDeltaPeakRssMb": 102.3,
+  "finalRenderMs": 638,
+  "finalDeltaPeakRssMb": 64.8
+}
+```
+
 The internal benchmark reports memory in two ways:
 
 - `peakRssMb`: total RSS of the current Bun process at peak.
@@ -854,14 +944,40 @@ The internal benchmark reports memory in two ways:
 
 This matters in production because Html2PdfSmith does not launch a separate Chromium process. Browser-based renderers must count both the server process and the browser process.
 
+## Package Contents
+
+The published npm package is intentionally small. The package includes the built `dist/` entrypoint, public docs, README, and license. It does not ship examples, generated PDFs, visual regression PNGs, or local benchmark output.
+
+Check the package before publishing:
+
+```bash
+npm pack --dry-run
+```
+
+Recent dry run:
+
+```text
+package size: 71.7 kB
+unpacked size: 305.0 kB
+total files: 8
+```
+
 ## Development
 
 ```bash
 bun install
 bun run typecheck
+bunx tsc --noEmit --noUnusedLocals --noUnusedParameters
+bun run build
 bun run smoke
 bun run visual:update
 bun run visual
+npm pack --dry-run
+```
+
+Example scripts write generated PDFs to `tmp/pdfs/` so the `examples/` folder stays source-only:
+
+```bash
 bun run example
 bun run example:css-table
 bun run example:fonts
@@ -885,9 +1001,9 @@ bun run bench -- 10 100 --watermark
 bun run bench:internal
 ```
 
-Visual regression tests require Poppler's `pdftoppm` command in `PATH`.
-Example PDFs are written under `tmp/pdfs/`, not into `examples/`.
-Use `bun run visual:update` to refresh PNG baselines in `examples/visual-baselines/`, then `bun run visual` to compare current renders against them. Current renders and diff PNGs are written under `tmp/visual/`.
+Visual regression tests require Poppler's `pdftoppm` command in `PATH`. Use `bun run visual:update` to refresh PNG baselines in `examples/visual-baselines/`, then `bun run visual` to compare current renders against them. Current renders and diff PNGs are written under `tmp/visual/`.
+
+The GitHub Actions workflow runs the same guardrail set on Windows: typecheck, strict unused check, build, smoke, visual regression with Poppler, and `npm pack --dry-run`.
 
 ## License
 
