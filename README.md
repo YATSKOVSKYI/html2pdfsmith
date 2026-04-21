@@ -3,12 +3,13 @@
 </p>
 
 <p align="center">
-  <strong>Browserless HTML-to-PDF rendering engine for TypeScript and Bun.</strong><br/>
+  <strong>Browserless HTML-to-PDF rendering engine for TypeScript, Node.js, and Bun.</strong><br/>
   <sub>HTML in. PDF out. No Chromium, no Playwright, no headless browser process.</sub>
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/html2pdfsmith"><img src="https://img.shields.io/npm/v/html2pdfsmith?style=flat-square&color=cb3837&logo=npm&logoColor=white" alt="npm"/></a>
+  <a href="#quickstart"><img src="https://img.shields.io/badge/Node.js-%3E%3D18.17-5fa04e?style=flat-square&logo=node.js&logoColor=white" alt="Node.js >= 18.17"/></a>
   <a href="#quickstart"><img src="https://img.shields.io/badge/Bun-%3E%3D1.2.0-f472b6?style=flat-square&logo=bun&logoColor=white" alt="Bun >= 1.2.0"/></a>
   <a href="#api"><img src="https://img.shields.io/badge/TypeScript-first-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript first"/></a>
   <a href="#performance"><img src="https://img.shields.io/badge/incremental_RSS-~63_MB-22c55e?style=flat-square" alt="~63 MB incremental RSS"/></a>
@@ -25,7 +26,7 @@ Html2PdfSmith is a different tradeoff: it is a document renderer for predictable
 
 | Area | Browser-based renderers | Html2PdfSmith |
 |---|---:|---:|
-| Runtime | Chromium / Playwright / Puppeteer | Bun + PDFKit |
+| Runtime | Chromium / Playwright / Puppeteer | Node.js or Bun + PDFKit |
 | Memory model | Browser process per render or pool | Streaming PDF writer |
 | Best fit | Arbitrary web pages | Reports, invoices, tables, branded PDFs |
 | JavaScript execution | Yes | No |
@@ -58,7 +59,7 @@ Use it when you own the template and want stable PDF output for reports, invoice
 
 ## Quickstart
 
-Html2PdfSmith targets Bun applications and libraries. The package is ESM-only and expects Bun `>=1.2.0`.
+Html2PdfSmith works as an ESM package in Node.js `>=18.17.0` and Bun `>=1.2.0`. The library returns standard `Uint8Array` PDF bytes; the repository's development scripts and examples use Bun for speed and convenience.
 
 ```bash
 npm install html2pdfsmith
@@ -68,6 +69,7 @@ bun add html2pdfsmith
 
 ```ts
 import { renderHtmlToPdf } from "html2pdfsmith";
+import { writeFile } from "node:fs/promises";
 
 const pdf = await renderHtmlToPdf({
   html: `
@@ -91,15 +93,14 @@ const pdf = await renderHtmlToPdf({
   `,
 });
 
-await Bun.write("report.pdf", pdf);
+await writeFile("report.pdf", pdf);
 ```
-
-For Node.js-only server processes, treat Html2PdfSmith as a Bun-side renderer for now. The public API returns standard `Uint8Array` PDF bytes, but the current implementation and examples use Bun APIs.
 
 ## Full Example
 
 ```ts
 import { renderHtmlToPdfDetailed } from "html2pdfsmith";
+import { writeFile } from "node:fs/promises";
 
 const result = await renderHtmlToPdfDetailed({
   html,
@@ -120,7 +121,7 @@ const result = await renderHtmlToPdfDetailed({
 });
 
 console.log(result.pages, result.orientation, result.warnings);
-await Bun.write("report.pdf", result.pdf);
+await writeFile("report.pdf", result.pdf);
 ```
 
 ## API
@@ -250,6 +251,12 @@ await renderHtmlToPdfDetailed({
 });
 ```
 
+A runnable version of this pattern is included:
+
+```bash
+bun run example:error-handling
+```
+
 Unexpected renderer bugs, invalid runtime state, and exceptions thrown from your own `onWarning` callback reject the render promise. The package exports error classes for callers that want typed handling:
 
 ```ts
@@ -261,10 +268,11 @@ import {
   PdfProtectionError,
   renderHtmlToPdfDetailed,
 } from "html2pdfsmith";
+import { writeFile } from "node:fs/promises";
 
 try {
   const result = await renderHtmlToPdfDetailed({ html });
-  await Bun.write("report.pdf", result.pdf);
+  await writeFile("report.pdf", result.pdf);
 } catch (error) {
   if (error instanceof Html2PdfError) {
     console.error(error.name, error.message);
@@ -300,17 +308,18 @@ The renderer takes finished HTML. TypeScript is only the caller; it does not hav
 
 ```ts
 import { dirname } from "node:path";
+import { readFile, writeFile } from "node:fs/promises";
 import { renderHtmlToPdfDetailed } from "html2pdfsmith";
 
 const input = "/srv/templates/comparison.html";
-const html = await Bun.file(input).text();
+const html = await readFile(input, "utf8");
 const result = await renderHtmlToPdfDetailed({
   html,
   baseUrl: dirname(input),
   resourcePolicy: { allowFile: true, allowData: true },
 });
 
-await Bun.write("comparison.pdf", result.pdf);
+await writeFile("comparison.pdf", result.pdf);
 ```
 
 You can also pass stylesheets explicitly:
@@ -957,8 +966,8 @@ npm pack --dry-run
 Recent dry run:
 
 ```text
-package size: 71.7 kB
-unpacked size: 305.0 kB
+package size: 71.9 kB
+unpacked size: 306.5 kB
 total files: 8
 ```
 
@@ -994,6 +1003,7 @@ bun run example:layout
 bun run example:visual-css
 bun run example:production-layout
 bun run example:inline-badges
+bun run example:error-handling
 bun run example:comparison-showcase
 bun run example:html-file
 bun run example:document

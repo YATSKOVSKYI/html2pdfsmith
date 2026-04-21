@@ -1,4 +1,5 @@
 import { Html2PdfError, renderHtmlToPdfDetailed, type RenderWarning } from "../src/index";
+import { bundledFonts } from "../packages/fonts/src/index";
 import { writeExamplePdf } from "./output";
 
 const html = `<!doctype html>
@@ -30,6 +31,7 @@ const recoverable = await renderHtmlToPdfDetailed({
     allowFile: true,
     allowData: true,
   },
+  font: { bundled: bundledFonts.openSans },
   onWarning(warning) {
     console.warn(`[recoverable:${warning.code}] ${warning.message}`);
   },
@@ -51,6 +53,7 @@ try {
       allowFile: true,
       allowData: true,
     },
+    font: { bundled: bundledFonts.openSans },
     onWarning(warning) {
       if (isFatalWarning(warning)) {
         throw new Error(`PDF render rejected: ${warning.code}: ${warning.message}`);

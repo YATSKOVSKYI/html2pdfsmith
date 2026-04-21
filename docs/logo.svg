@@ -55,7 +55,8 @@
       .pill-4 { animation-delay: 0.95s; }
       .tech-badge { animation: scaleIn 0.6s ease-out both; }
       .tech-ts { animation-delay: 0.6s; }
-      .tech-bun { animation-delay: 0.75s; }
+      .tech-node { animation-delay: 0.75s; }
+      .tech-bun { animation-delay: 0.9s; }
     </style>
 
     <!-- Main gradient -->
@@ -221,29 +222,29 @@
   </g>
 
   <!-- Tagline -->
-  <text x="342" y="148" class="tagline-text" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#64748b" letter-spacing="2.5" opacity="0">BROWSERLESS HTML-TO-PDF ENGINE</text>
+  <text x="342" y="148" class="tagline-text" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#64748b" letter-spacing="2.5" opacity="0">BROWSERLESS HTML-TO-PDF FOR NODE.JS + BUN</text>
 
 
   <!-- ===== FEATURE PILLS ===== -->
   <g class="pill pill-1" opacity="0">
     <rect x="340" y="168" width="88" height="28" rx="14" fill="#7c3aed" opacity="0.1" stroke="#7c3aed" stroke-width="0.6" stroke-opacity="0.2"/>
-    <text x="358" y="186" font-family="ui-sans-serif,sans-serif" font-size="11" font-weight="600" fill="#a78bfa">⚡ ~123ms</text>
+    <text x="361" y="186" font-family="ui-sans-serif,sans-serif" font-size="11" font-weight="600" fill="#a78bfa">~192ms</text>
   </g>
   <g class="pill pill-2" opacity="0">
     <rect x="438" y="168" width="100" height="28" rx="14" fill="#7c3aed" opacity="0.1" stroke="#7c3aed" stroke-width="0.6" stroke-opacity="0.2"/>
-    <text x="452" y="186" font-family="ui-sans-serif,sans-serif" font-size="11" font-weight="600" fill="#a78bfa">🪶 ~41MB RSS</text>
+    <text x="455" y="186" font-family="ui-sans-serif,sans-serif" font-size="11" font-weight="600" fill="#a78bfa">~63MB RSS</text>
   </g>
   <g class="pill pill-3" opacity="0">
     <rect x="548" y="168" width="118" height="28" rx="14" fill="#7c3aed" opacity="0.1" stroke="#7c3aed" stroke-width="0.6" stroke-opacity="0.2"/>
-    <text x="562" y="186" font-family="ui-sans-serif,sans-serif" font-size="11" font-weight="600" fill="#a78bfa">🚫 No Chromium</text>
+    <text x="565" y="186" font-family="ui-sans-serif,sans-serif" font-size="11" font-weight="600" fill="#a78bfa">No Chromium</text>
   </g>
   <g class="pill pill-4" opacity="0">
     <rect x="676" y="168" width="100" height="28" rx="14" fill="#7c3aed" opacity="0.1" stroke="#7c3aed" stroke-width="0.6" stroke-opacity="0.2"/>
-    <text x="692" y="186" font-family="ui-sans-serif,sans-serif" font-size="11" font-weight="600" fill="#a78bfa">📄 Streaming</text>
+    <text x="699" y="186" font-family="ui-sans-serif,sans-serif" font-size="11" font-weight="600" fill="#a78bfa">Streaming</text>
   </g>
 
 
-  <!-- ===== TECH BADGES: TypeScript + Bun ===== -->
+  <!-- ===== TECH BADGES: TypeScript + Node.js + Bun ===== -->
 
   <!-- TypeScript badge -->
   <g class="tech-badge tech-ts" opacity="0">
@@ -255,19 +256,26 @@
     <text x="372" y="230" font-family="ui-sans-serif,sans-serif" font-size="11.5" font-weight="600" fill="#94a3b8">TypeScript</text>
   </g>
 
+  <!-- Node.js badge -->
+  <g class="tech-badge tech-node" opacity="0">
+    <rect x="456" y="210" width="82" height="30" rx="6" fill="#1e293b" stroke="#334155" stroke-width="0.8"/>
+    <path d="M473 216 L482 221 V229 L473 234 L464 229 V221 Z" fill="#5fa04e"/>
+    <text x="489" y="230" font-family="ui-sans-serif,sans-serif" font-size="11.5" font-weight="600" fill="#94a3b8">Node</text>
+  </g>
+
   <!-- Bun badge -->
   <g class="tech-badge tech-bun" opacity="0">
-    <rect x="456" y="210" width="72" height="30" rx="6" fill="#1e293b" stroke="#334155" stroke-width="0.8"/>
+    <rect x="548" y="210" width="72" height="30" rx="6" fill="#1e293b" stroke="#334155" stroke-width="0.8"/>
     <!-- Bun logo: circle with face -->
-    <circle cx="473" cy="225" r="9" fill="#fbf0df"/>
-    <ellipse cx="470" cy="223" rx="1.5" ry="2" fill="#3a2a1a"/>
-    <ellipse cx="476" cy="223" rx="1.5" ry="2" fill="#3a2a1a"/>
-    <path d="M469 227 Q473 231 477 227" fill="none" stroke="#3a2a1a" stroke-width="1" stroke-linecap="round"/>
+    <circle cx="565" cy="225" r="9" fill="#fbf0df"/>
+    <ellipse cx="562" cy="223" rx="1.5" ry="2" fill="#3a2a1a"/>
+    <ellipse cx="568" cy="223" rx="1.5" ry="2" fill="#3a2a1a"/>
+    <path d="M561 227 Q565 231 569 227" fill="none" stroke="#3a2a1a" stroke-width="1" stroke-linecap="round"/>
     <!-- Bun sprout -->
-    <path d="M473 215 C473 211 469 210 470 214" fill="none" stroke="#4ade80" stroke-width="1.2" stroke-linecap="round"/>
-    <path d="M473 215 C473 210 477 210 476 214" fill="none" stroke="#4ade80" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M565 215 C565 211 561 210 562 214" fill="none" stroke="#4ade80" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M565 215 C565 210 569 210 568 214" fill="none" stroke="#4ade80" stroke-width="1.2" stroke-linecap="round"/>
     <!-- Label -->
-    <text x="487" y="230" font-family="ui-sans-serif,sans-serif" font-size="11.5" font-weight="600" fill="#94a3b8">Bun</text>
+    <text x="579" y="230" font-family="ui-sans-serif,sans-serif" font-size="11.5" font-weight="600" fill="#94a3b8">Bun</text>
   </g>
 
 

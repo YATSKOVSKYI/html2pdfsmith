@@ -1,5 +1,11 @@
-import { Buffer } from "node:buffer";
+import { execFile } from "node:child_process";
+import { readFile, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import { PdfProtectionError } from "./errors";
+
+const execFileAsync = promisify(execFile);
 
 function ownerPassword(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -8,16 +14,14 @@ function ownerPassword(): string {
 }
 
 export async function protectPdfWithQpdf(pdf: Uint8Array, qpdfPath = "qpdf"): Promise<Uint8Array> {
-  const tmpDir = process.env["TMPDIR"] ?? process.env["TEMP"] ?? "/tmp";
   const suffix = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  const inPath = `${tmpDir}/html_pdf_lite_in_${suffix}.pdf`;
-  const outPath = `${tmpDir}/html_pdf_lite_out_${suffix}.pdf`;
+  const inPath = join(tmpdir(), `html2pdfsmith_in_${suffix}.pdf`);
+  const outPath = join(tmpdir(), `html2pdfsmith_out_${suffix}.pdf`);
   const password = ownerPassword();
 
   try {
-    await Bun.write(inPath, pdf);
-    const proc = Bun.spawn([
-      qpdfPath,
+    await writeFile(inPath, pdf);
+    const args = [
       "--encrypt",
       "",
       password,
@@ -27,18 +31,21 @@ export async function protectPdfWithQpdf(pdf: Uint8Array, qpdfPath = "qpdf"): Pr
       "--",
       inPath,
       outPath,
-    ], { stderr: "pipe" });
+    ];
 
-    const code = await proc.exited;
-    if (code !== 0) {
-      const err = await new Response(proc.stderr).text();
-      throw new PdfProtectionError(`qpdf exited ${code}: ${err.trim()}`);
+    try {
+      await execFileAsync(qpdfPath, args, { windowsHide: true });
+    } catch (error) {
+      const stderr = typeof (error as { stderr?: unknown }).stderr === "string"
+        ? (error as { stderr: string }).stderr.trim()
+        : "";
+      const message = error instanceof Error ? error.message : String(error);
+      throw new PdfProtectionError(stderr ? `${message}: ${stderr}` : message);
     }
 
-    return new Uint8Array(await Bun.file(outPath).arrayBuffer());
+    return new Uint8Array(await readFile(outPath));
   } finally {
-    try { await Bun.file(inPath).delete(); } catch {}
-    try { await Bun.file(outPath).delete(); } catch {}
-    Buffer.alloc(0);
+    try { await unlink(inPath); } catch {}
+    try { await unlink(outPath); } catch {}
   }
 }

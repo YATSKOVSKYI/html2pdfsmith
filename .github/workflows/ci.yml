@@ -20,6 +20,11 @@ jobs:
         with:
           bun-version: "1.3.11"
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Install Poppler
         shell: pwsh
         run: |
@@ -50,6 +55,24 @@ jobs:
 
       - name: Build
         run: bun run build
+
+      - name: Node runtime smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path tmp/pdfs | Out-Null
+          @'
+          import { writeFile } from "node:fs/promises";
+          import { renderHtmlToPdfDetailed } from "./dist/index.js";
+          const result = await renderHtmlToPdfDetailed({
+            html: "<!doctype html><html><body><h1>Node runtime smoke</h1><table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table></body></html>",
+          });
+          await writeFile("tmp/pdfs/node-runtime-smoke.pdf", result.pdf);
+          if (result.pages < 1 || result.pdf.byteLength < 1000) {
+            throw new Error(`Invalid Node render result: ${JSON.stringify({ pages: result.pages, bytes: result.pdf.byteLength })}`);
+          }
+          console.log({ pages: result.pages, bytes: result.pdf.byteLength, warnings: result.warnings.map((warning) => warning.code) });
+          '@ | node --input-type=module
 
       - name: Smoke
         run: bun run smoke
