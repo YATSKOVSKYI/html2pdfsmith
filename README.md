@@ -860,6 +860,8 @@ This matters in production because Html2PdfSmith does not launch a separate Chro
 bun install
 bun run typecheck
 bun run smoke
+bun run visual:update
+bun run visual
 bun run example
 bun run example:css-table
 bun run example:fonts
@@ -882,6 +884,9 @@ bun run example:document
 bun run bench -- 10 100 --watermark
 bun run bench:internal
 ```
+
+Visual regression tests require Poppler's `pdftoppm` command in `PATH`.
+Use `bun run visual:update` to refresh PNG baselines in `examples/visual-baselines/`, then `bun run visual` to compare current renders against them. Current renders and diff PNGs are written under `tmp/visual/`.
 
 ## License
 

@@ -13,8 +13,9 @@
   },
   "files": [
     "dist",
-    "docs",
-    "examples",
+    "docs/logo.svg",
+    "docs/memory.md",
+    "docs/scope.md",
     "README.md",
     "LICENSE"
   ],
@@ -45,6 +46,8 @@
     "bench": "bun --expose-gc run examples/bench-table.ts",
     "bench:internal": "bun --expose-gc run examples/internal-benchmark.ts",
     "smoke": "bun run examples/smoke.ts",
+    "visual": "bun run examples/visual-regression.ts",
+    "visual:update": "bun run examples/visual-regression.ts --update",
     "test:fonts": "bun run examples/test-google-fonts.ts"
   },
   "keywords": [
