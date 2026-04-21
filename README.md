@@ -789,6 +789,9 @@ import {
   isGoogleFontCached,
   getGoogleFontCacheDir,
 
+  // PDF protection (requires qpdf in PATH or a custom path)
+  protectPdfWithQpdf,
+
   // Font resolution
   resolveFontPaths,
 
