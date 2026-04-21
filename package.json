@@ -3,23 +3,25 @@
   "version": "0.1.2",
   "description": "Browserless HTML-to-PDF rendering engine for TypeScript and Bun. No Chromium, low-memory streaming renderer, Google Fonts support with disk caching.",
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
   "files": [
-    "src",
+    "dist",
     "docs",
     "examples",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
     "typecheck": "tsc --noEmit",
+    "prepack": "bun run build",
     "example": "bun run examples/simple-table.ts",
     "example:css-table": "bun run examples/css-table.ts",
     "example:document": "bun run examples/simple-document.ts",
@@ -87,6 +89,7 @@
   },
   "devDependencies": {
     "bun-types": "latest",
+    "tsup": "^8.0.2",
     "typescript": "^5.8.0"
   },
   "engines": {
