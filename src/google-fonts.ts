@@ -14,6 +14,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
 import type { WarningSink } from "./warnings";
+import { FontLoadError } from "./errors";
 
 /* ---------- cache location ---------- */
 
@@ -67,7 +68,7 @@ async function fetchCssAndParseUrls(family: string, weights: string[]): Promise<
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) {
-    throw new Error(`Google Fonts CSS API returned HTTP ${response.status} for "${family}"`);
+    throw new FontLoadError(`Google Fonts CSS API returned HTTP ${response.status} for "${family}"`);
   }
   const css = await response.text();
 
@@ -115,10 +116,10 @@ function isSupportedFontFile(path: string): boolean {
 
 async function downloadToCache(url: string, dest: string): Promise<void> {
   const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-  if (!response.ok) throw new Error(`HTTP ${response.status} downloading font`);
+  if (!response.ok) throw new FontLoadError(`HTTP ${response.status} downloading font`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (!isSupportedFontBytes(bytes)) {
-    throw new Error("Google Fonts returned a non-TTF/OTF font format that PDFKit cannot register");
+    throw new FontLoadError("Google Fonts returned a non-TTF/OTF font format that PDFKit cannot register");
   }
   await writeFile(dest, bytes);
 }

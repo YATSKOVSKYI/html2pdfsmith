@@ -45,6 +45,7 @@ export {
   renderHtmlToPdf as renderHtmlToPdfLegacy,
   renderHtmlToPdfDetailed as renderHtmlToPdfDetailedLegacy,
 } from "./render";
+
 export {
   calculateFontScale,
   calculateHeaderCellHeight,
@@ -57,3 +58,4 @@ export {
   getGoogleFontCacheDir,
 } from "./google-fonts";
 export { resolveFontPaths } from "./assets";
+export * from "./errors";

@@ -32,6 +32,7 @@ import {
 } from "./units";
 import { WarningSink } from "./warnings";
 import { wrapText } from "./text";
+import { Html2PdfError } from "./errors";
 
 type Rgb = ReturnType<typeof rgb>;
 
@@ -490,7 +491,7 @@ export async function renderHtmlToPdfDetailed(
   const html = await prepareHtmlForRender(options, warnings);
   const parsed = parsePrintableHtml(html);
   if (!parsed.primaryTable) {
-    throw new Error("Legacy pdf-lib backend only supports documents with a table. Use the default streaming renderer for general printable HTML.");
+    throw new Html2PdfError("Legacy pdf-lib backend only supports documents with a table. Use the default streaming renderer for general printable HTML.");
   }
   const pdfDoc = await PDFDocument.create();
   pdfDoc.setProducer("Html2PdfSmith");

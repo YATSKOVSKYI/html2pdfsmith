@@ -8,6 +8,7 @@ import { DomUtils } from "htmlparser2";
 import type { AnyNode, Element } from "domhandler";
 import type { PdfResourcePolicy, PdfStylesheet, RenderHtmlToPdfOptions } from "./types";
 import type { WarningSink } from "./warnings";
+import { ResourcePolicyError, ResourceLoadError } from "./errors";
 
 type ResourceKind = "data" | "http" | "file";
 type ResourceType = "image" | "stylesheet" | "font";
@@ -103,7 +104,7 @@ export function resolveResource(src: string, baseUrl: string | undefined): Resol
 
 function parseDataUrl(src: string): { bytes: Uint8Array; mime: string } {
   const match = /^data:([^;,]+)?(?:;[^,]*)?,(.*)$/is.exec(src);
-  if (!match) throw new Error("Invalid data URL");
+  if (!match) throw new ResourcePolicyError("Invalid data URL");
   const mime = (match[1] || "application/octet-stream").toLowerCase();
   const payload = match[2] ?? "";
   const isBase64 = /^data:[^,]*;base64,/i.test(src);
@@ -115,19 +116,19 @@ function parseDataUrl(src: string): { bytes: Uint8Array; mime: string } {
 
 function enforceAllowed(resource: ResolvedResource, type: ResourceType, policy: PdfResourcePolicy | undefined): void {
   if (resource.kind === "data" && !policyValue(policy, "allowData", true)) {
-    throw new Error(`${type} data URLs are blocked by resourcePolicy.allowData=false`);
+    throw new ResourcePolicyError(`${type} data URLs are blocked by resourcePolicy.allowData=false`);
   }
   if (resource.kind === "http" && !policyValue(policy, "allowHttp", true)) {
-    throw new Error(`${type} HTTP resources are blocked by resourcePolicy.allowHttp=false`);
+    throw new ResourcePolicyError(`${type} HTTP resources are blocked by resourcePolicy.allowHttp=false`);
   }
   if (resource.kind === "file" && !policyValue(policy, "allowFile", true)) {
-    throw new Error(`${type} file resources are blocked by resourcePolicy.allowFile=false`);
+    throw new ResourcePolicyError(`${type} file resources are blocked by resourcePolicy.allowFile=false`);
   }
 }
 
 function enforceSize(size: number, limit: number, type: ResourceType, display: string): void {
   if (size > limit) {
-    throw new Error(`${type} resource is too large (${size} bytes > ${limit} bytes): ${display}`);
+    throw new ResourcePolicyError(`${type} resource is too large (${size} bytes > ${limit} bytes): ${display}`);
   }
 }
 
@@ -150,7 +151,7 @@ export async function loadResource(
 
     if (resource.kind === "http") {
       const response = await fetch(resource.value, { signal: AbortSignal.timeout(timeoutMs(options.resourcePolicy)) });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) throw new ResourceLoadError(`HTTP ${response.status}`);
       const contentLength = Number(response.headers.get("content-length"));
       if (Number.isFinite(contentLength)) enforceSize(contentLength, limit, type, resource.display);
       const bytes = new Uint8Array(await response.arrayBuffer());

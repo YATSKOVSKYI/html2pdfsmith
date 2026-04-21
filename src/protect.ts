@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { PdfProtectionError } from "./errors";
 
 function ownerPassword(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -31,7 +32,7 @@ export async function protectPdfWithQpdf(pdf: Uint8Array, qpdfPath = "qpdf"): Pr
     const code = await proc.exited;
     if (code !== 0) {
       const err = await new Response(proc.stderr).text();
-      throw new Error(`qpdf exited ${code}: ${err.trim()}`);
+      throw new PdfProtectionError(`qpdf exited ${code}: ${err.trim()}`);
     }
 
     return new Uint8Array(await Bun.file(outPath).arrayBuffer());
