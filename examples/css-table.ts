@@ -1,5 +1,6 @@
 import { PDFDocument } from "pdf-lib";
 import { renderHtmlToPdfDetailed } from "../src/index";
+import { writeExamplePdf } from "./output";
 
 const rows = Array.from({ length: 34 }, (_, index) => `
   <tr>
@@ -37,19 +38,6 @@ const html = `<!doctype html>
 </body>
 </html>`;
 
-async function writeExamplePdf(filename: string, pdf: Uint8Array): Promise<string> {
-  const target = new URL(filename, import.meta.url);
-  try {
-    await Bun.write(target, pdf);
-    return target.pathname;
-  } catch (error) {
-    if (!(error instanceof Error) || !error.message.includes("EBUSY")) throw error;
-    const fallback = new URL(filename.replace(/\.pdf$/i, `-${Date.now()}.pdf`), import.meta.url);
-    await Bun.write(fallback, pdf);
-    return fallback.pathname;
-  }
-}
-
 const result = await renderHtmlToPdfDetailed({
   html,
   repeatHeaders: true,
@@ -60,7 +48,7 @@ const result = await renderHtmlToPdfDetailed({
   pageNumbers: { format: "Page {page}", align: "right" },
 });
 
-const output = await writeExamplePdf("./css-table.pdf", result.pdf);
+const output = await writeExamplePdf("css-table.pdf", result.pdf);
 const loaded = await PDFDocument.load(result.pdf);
 console.log({
   output,

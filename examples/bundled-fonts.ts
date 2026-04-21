@@ -1,6 +1,6 @@
-import { writeFile } from "node:fs/promises";
 import { renderHtmlToPdfDetailed } from "../src/index";
 import { bundledFonts } from "../packages/fonts/src/index";
+import { writeExamplePdf } from "./output";
 
 const html = `
 <!doctype html>
@@ -159,9 +159,10 @@ const result = await renderHtmlToPdfDetailed({
   watermarkOpacity: 0.08,
 });
 
-await writeFile("examples/bundled-fonts.pdf", result.pdf);
+const output = await writeExamplePdf("bundled-fonts.pdf", result.pdf);
 
 console.log({
+  output,
   pages: result.pages,
   bytes: result.pdf.byteLength,
   warnings: result.warnings,

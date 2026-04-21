@@ -1,5 +1,6 @@
 import { renderHtmlToPdfDetailed } from "../src/index";
 import { bundledFonts } from "../packages/fonts/src/index";
+import { writeExamplePdf } from "./output";
 
 const groups = Array.from({ length: 12 }, (_, groupIndex) => {
   const rows = Array.from({ length: 3 }, (_, itemIndex) => {
@@ -142,9 +143,10 @@ const result = await renderHtmlToPdfDetailed({
   },
 });
 
-await Bun.write("examples/merged-table-pagination.pdf", result.pdf);
+const output = await writeExamplePdf("merged-table-pagination.pdf", result.pdf);
 
 console.log({
+  output,
   pages: result.pages,
   bytes: result.pdf.byteLength,
   warnings: result.warnings,

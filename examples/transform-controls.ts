@@ -1,5 +1,6 @@
 import { renderHtmlToPdfDetailed } from "../src/index";
 import { bundledFonts } from "../packages/fonts/src/index";
+import { writeExamplePdf } from "./output";
 
 const arrowSvg = encodeURIComponent(`
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
@@ -122,9 +123,10 @@ const result = await renderHtmlToPdfDetailed({
   },
 });
 
-await Bun.write("examples/transform-controls.pdf", result.pdf);
+const output = await writeExamplePdf("transform-controls.pdf", result.pdf);
 
 console.log({
+  output,
   pages: result.pages,
   bytes: result.pdf.byteLength,
   warnings: result.warnings,

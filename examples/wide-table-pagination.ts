@@ -1,5 +1,6 @@
 import { renderHtmlToPdfDetailed } from "../src/index";
 import { bundledFonts } from "../packages/fonts/src/index";
+import { writeExamplePdf } from "./output";
 
 const metricHeaders = Array.from({ length: 16 }, (_, i) => `<th>M${i + 1}</th>`).join("");
 
@@ -147,9 +148,10 @@ const result = await renderHtmlToPdfDetailed({
   },
 });
 
-await Bun.write("examples/wide-table-pagination.pdf", result.pdf);
+const output = await writeExamplePdf("wide-table-pagination.pdf", result.pdf);
 
 console.log({
+  output,
   pages: result.pages,
   bytes: result.pdf.byteLength,
   warnings: result.warnings,

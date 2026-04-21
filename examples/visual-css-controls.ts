@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { renderHtmlToPdfDetailed } from "../src/index";
 import { bundledFonts } from "../packages/fonts/src/index";
+import { writeExamplePdf } from "./output";
 
 const html = `<!doctype html>
 <html>
@@ -122,9 +123,10 @@ const result = await renderHtmlToPdfDetailed({
   },
 });
 
-await Bun.write("examples/visual-css-controls.pdf", result.pdf);
+const output = await writeExamplePdf("visual-css-controls.pdf", result.pdf);
 
 console.log({
+  output,
   pages: result.pages,
   bytes: result.pdf.byteLength,
   warnings: result.warnings,

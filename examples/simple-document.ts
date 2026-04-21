@@ -1,4 +1,5 @@
 import { renderHtmlToPdfDetailed } from "../src/index";
+import { writeExamplePdf } from "./output";
 
 const html = `<!doctype html>
 <html>
@@ -36,8 +37,9 @@ const result = await renderHtmlToPdfDetailed({
   watermarkOpacity: 12,
 });
 
-await Bun.write(new URL("./simple-document.pdf", import.meta.url), result.pdf);
+const output = await writeExamplePdf("simple-document.pdf", result.pdf);
 console.log({
+  output,
   pages: result.pages,
   columns: result.columns,
   orientation: result.orientation,

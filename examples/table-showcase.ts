@@ -1,5 +1,6 @@
 import { renderHtmlToPdfDetailed } from "../src/index";
 import { bundledFonts } from "../packages/fonts/src/index";
+import { writeExamplePdf } from "./output";
 
 const rows = Array.from({ length: 34 }, (_, index) => {
   const id = `INV-${String(index + 1).padStart(4, "0")}`;
@@ -179,9 +180,10 @@ const result = await renderHtmlToPdfDetailed({
   },
 });
 
-await Bun.write("examples/table-showcase.pdf", result.pdf);
+const output = await writeExamplePdf("table-showcase.pdf", result.pdf);
 
 console.log({
+  output,
   pages: result.pages,
   bytes: result.pdf.byteLength,
   warnings: result.warnings,

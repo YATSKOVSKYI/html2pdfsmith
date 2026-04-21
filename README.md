@@ -886,6 +886,7 @@ bun run bench:internal
 ```
 
 Visual regression tests require Poppler's `pdftoppm` command in `PATH`.
+Example PDFs are written under `tmp/pdfs/`, not into `examples/`.
 Use `bun run visual:update` to refresh PNG baselines in `examples/visual-baselines/`, then `bun run visual` to compare current renders against them. Current renders and diff PNGs are written under `tmp/visual/`.
 
 ## License

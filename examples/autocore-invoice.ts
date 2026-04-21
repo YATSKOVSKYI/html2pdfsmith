@@ -1,5 +1,5 @@
 import { renderHtmlToPdfDetailed } from "../src/index";
-import { writeFileSync } from "node:fs";
+import { writeExamplePdf } from "./output";
 
 const html = `
 <!DOCTYPE html>
@@ -239,8 +239,7 @@ async function main() {
     }
   });
 
-  const outputPath = "examples/autocore-invoice.pdf";
-  writeFileSync(outputPath, result.pdf);
+  const outputPath = await writeExamplePdf("autocore-invoice.pdf", result.pdf);
   
   console.log(`\n✅ Invoice successfully generated: ${outputPath}`);
 }

@@ -1,7 +1,8 @@
-import { dirname, extname, resolve } from "node:path";
+import { basename, dirname, extname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { renderHtmlToPdfDetailed } from "../src/index";
 import { bundledFonts } from "../packages/fonts/src/index";
+import { outputPdfPath } from "./output";
 
 function usage(): never {
   console.error("Usage: bun run examples/render-html-file.ts <input.html> [output.pdf]");
@@ -18,9 +19,10 @@ if (!existsSync(inputPath)) {
 }
 
 const outputArg = Bun.argv[3];
+const inputExt = extname(inputPath);
 const outputPath = outputArg
   ? resolve(process.cwd(), outputArg)
-  : inputPath.slice(0, -extname(inputPath).length) + ".pdf";
+  : await outputPdfPath(`${basename(inputPath, inputExt)}.pdf`);
 
 const html = await Bun.file(inputPath).text();
 const result = await renderHtmlToPdfDetailed({

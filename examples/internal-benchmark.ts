@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { createChartDashboardHtml, renderHtmlToPdfDetailed, type ChartDashboardCard, type RenderWarning } from "../src/index";
 import { bundledFonts } from "../packages/fonts/src/index";
+import { outputPdfPath } from "./output";
 
 interface MemorySnapshot {
   rss: number;
@@ -52,7 +53,8 @@ const targetPages = Number(Bun.argv.find((arg) => arg.startsWith("--pages="))?.s
 const fixedBenchmarkPages = 7; // title, formulas, charts, efficiency, radial/radar, advanced chart suite, metrics
 const dataPages = Math.max(1, targetPages - fixedBenchmarkPages);
 const rowsPerPage = Number(Bun.argv.find((arg) => arg.startsWith("--rows-per-page="))?.split("=")[1] ?? 12);
-const outputPath = resolve(process.cwd(), Bun.argv.find((arg) => arg.endsWith(".pdf")) ?? "examples/internal-benchmark.pdf");
+const outputArg = Bun.argv.find((arg) => arg.endsWith(".pdf"));
+const outputPath = outputArg ? resolve(process.cwd(), outputArg) : await outputPdfPath("internal-benchmark.pdf");
 
 function mb(bytes: number): number {
   return Math.round(bytes / 1024 / 1024 * 10) / 10;

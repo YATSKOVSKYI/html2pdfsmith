@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { renderHtmlToPdfDetailed } from "../src/index";
+import { writeExamplePdf } from "./output";
 
 const html = `
 <!doctype html>
@@ -65,9 +66,10 @@ const result = await renderHtmlToPdfDetailed({
   watermarkOpacity: 0.06,
 });
 
-await Bun.write("examples/font-face.pdf", result.pdf);
+const output = await writeExamplePdf("font-face.pdf", result.pdf);
 
 console.log({
+  output,
   pages: result.pages,
   bytes: result.pdf.byteLength,
   warnings: result.warnings,

@@ -26,11 +26,11 @@ interface DiffResult {
 }
 
 const fixtures: Fixture[] = [
-  { name: "simple-document", script: "examples/simple-document.ts", pdf: "examples/simple-document.pdf" },
-  { name: "css-table", script: "examples/css-table.ts", pdf: "examples/css-table.pdf" },
-  { name: "visual-css-controls", script: "examples/visual-css-controls.ts", pdf: "examples/visual-css-controls.pdf" },
-  { name: "wide-table-pagination", script: "examples/wide-table-pagination.ts", pdf: "examples/wide-table-pagination.pdf" },
-  { name: "inline-badges", script: "examples/inline-badges.ts", pdf: "examples/inline-badges.pdf" },
+  { name: "simple-document", script: "examples/simple-document.ts", pdf: "tmp/pdfs/simple-document.pdf" },
+  { name: "css-table", script: "examples/css-table.ts", pdf: "tmp/pdfs/css-table.pdf" },
+  { name: "visual-css-controls", script: "examples/visual-css-controls.ts", pdf: "tmp/pdfs/visual-css-controls.pdf" },
+  { name: "wide-table-pagination", script: "examples/wide-table-pagination.ts", pdf: "tmp/pdfs/wide-table-pagination.pdf" },
+  { name: "inline-badges", script: "examples/inline-badges.ts", pdf: "tmp/pdfs/inline-badges.pdf" },
 ];
 
 const args = new Set(process.argv.slice(2));

@@ -1,5 +1,6 @@
 import { renderHtmlToPdfDetailed } from "../src/index";
 import { bundledFonts } from "../packages/fonts/src/index";
+import { writeExamplePdf } from "./output";
 
 const rows = Array.from({ length: 42 }, (_, index) => {
   const token = `ORDER-${String(index + 1).padStart(3, "0")}-THIS_IS_A_VERY_LONG_UNBROKEN_IDENTIFIER_${"X".repeat(34 + index % 12)}`;
@@ -109,9 +110,10 @@ const result = await renderHtmlToPdfDetailed({
   },
 });
 
-await Bun.write("examples/page-wrap-repeat.pdf", result.pdf);
+const output = await writeExamplePdf("page-wrap-repeat.pdf", result.pdf);
 
 console.log({
+  output,
   pages: result.pages,
   bytes: result.pdf.byteLength,
   orientation: result.orientation,

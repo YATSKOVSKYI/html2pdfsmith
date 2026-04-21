@@ -1,17 +1,5 @@
 import { renderHtmlToPdfDetailed } from "../src/index";
-
-async function writeExamplePdf(filename: string, pdf: Uint8Array): Promise<string> {
-  const target = new URL(filename, import.meta.url);
-  try {
-    await Bun.write(target, pdf);
-    return target.pathname;
-  } catch (error) {
-    if (!(error instanceof Error) || !error.message.includes("EBUSY")) throw error;
-    const fallback = new URL(filename.replace(/\.pdf$/i, `-${Date.now()}.pdf`), import.meta.url);
-    await Bun.write(fallback, pdf);
-    return fallback.pathname;
-  }
-}
+import { writeExamplePdf } from "./output";
 
 const html = `<!doctype html>
 <html>
@@ -87,7 +75,7 @@ const result = await renderHtmlToPdfDetailed({
   font: { autoDiscover: true },
 });
 
-const output = await writeExamplePdf("./simple-table.pdf", result.pdf);
+const output = await writeExamplePdf("simple-table.pdf", result.pdf);
 console.log({
   output,
   pages: result.pages,

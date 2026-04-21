@@ -41,7 +41,7 @@
     "example:production-layout": "bun run examples/production-layout-controls.ts",
     "example:inline-badges": "bun run examples/inline-badges.ts",
     "example:comparison-showcase": "bun run examples/comparison-table-showcase.ts",
-    "example:html-file": "bun run examples/render-html-file.ts examples/fixtures/comparison-rich-table.html examples/comparison-rich-table.from-html.pdf",
+    "example:html-file": "bun run examples/render-html-file.ts examples/fixtures/comparison-rich-table.html tmp/pdfs/comparison-rich-table.from-html.pdf",
     "example:autocore": "bun run examples/autocore-invoice.ts",
     "bench": "bun --expose-gc run examples/bench-table.ts",
     "bench:internal": "bun --expose-gc run examples/internal-benchmark.ts",

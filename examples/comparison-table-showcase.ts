@@ -1,7 +1,8 @@
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderHtmlToPdfDetailed } from "../src/index";
 import { bundledFonts } from "../packages/fonts/src/index";
+import { writeExamplePdf } from "./output";
 
 const fixturePath = fileURLToPath(new URL("./fixtures/comparison-rich-table.html", import.meta.url));
 const html = await Bun.file(fixturePath).text();
@@ -20,8 +21,7 @@ const result = await renderHtmlToPdfDetailed({
   },
 });
 
-const outputPath = resolve(dirname(fixturePath), "../comparison-table-showcase.pdf");
-await Bun.write(outputPath, result.pdf);
+const outputPath = await writeExamplePdf("comparison-table-showcase.pdf", result.pdf);
 
 console.log({
   input: fixturePath,
