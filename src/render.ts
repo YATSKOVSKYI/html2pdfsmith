@@ -8,7 +8,7 @@ import {
   degrees,
   rgb,
 } from "pdf-lib";
-import { discoverFontPaths, embedImage, loadFontBytes, resolveFontPaths } from "./assets";
+import { embedImage, loadFontBytes, resolveFontPaths } from "./assets";
 import { parsePrintableHtml } from "./html";
 import { prepareHtmlForRender } from "./resources";
 import { protectPdfWithQpdf } from "./protect";
