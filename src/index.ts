@@ -58,4 +58,5 @@ export {
   getGoogleFontCacheDir,
 } from "./google-fonts";
 export { resolveFontPaths } from "./assets";
+export { protectPdfWithQpdf } from "./protect";
 export * from "./errors";
