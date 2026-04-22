@@ -41,10 +41,6 @@ export {
   renderHtmlToPdf,
   renderHtmlToPdfDetailed,
 } from "./stream-render";
-export {
-  renderHtmlToPdf as renderHtmlToPdfLegacy,
-  renderHtmlToPdfDetailed as renderHtmlToPdfDetailedLegacy,
-} from "./render";
 
 export {
   calculateFontScale,

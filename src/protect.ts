@@ -13,7 +13,19 @@ function ownerPassword(): string {
   return Array.from(bytes, (byte) => chars[byte % chars.length]).join("");
 }
 
+function validateQpdfPath(qpdfPath: string): void {
+  if (!qpdfPath || qpdfPath.trim() === "") {
+    throw new PdfProtectionError("qpdfPath must not be empty");
+  }
+  // Reject paths containing shell metacharacters or null bytes that could
+  // be used to inject additional arguments or escape the intended command.
+  if (/[\0;&|`$<>'"!{}()[\]]/.test(qpdfPath)) {
+    throw new PdfProtectionError(`qpdfPath contains disallowed characters: "${qpdfPath}"`);
+  }
+}
+
 export async function protectPdfWithQpdf(pdf: Uint8Array, qpdfPath = "qpdf"): Promise<Uint8Array> {
+  validateQpdfPath(qpdfPath);
   const suffix = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const inPath = join(tmpdir(), `html2pdfsmith_in_${suffix}.pdf`);
   const outPath = join(tmpdir(), `html2pdfsmith_out_${suffix}.pdf`);
