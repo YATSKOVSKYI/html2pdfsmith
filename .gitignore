@@ -8,4 +8,4 @@ tmp/
 *.pdf
 
 # Claude Code worktrees
-.claude/worktrees/
+.claude/
