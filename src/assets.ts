@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { Buffer } from "node:buffer";
-import type { PDFDocument } from "pdf-lib";
 import type { WarningSink } from "./warnings";
 import type { PdfFontOptions, PdfResourcePolicy, RenderHtmlToPdfOptions } from "./types";
 import { isGoogleFontCached, resolveGoogleFont } from "./google-fonts";
@@ -31,30 +30,6 @@ export async function loadImage(
   const loaded = await loadResource(trimmed, "image", warnings, options);
   if (!loaded) return null;
   return { bytes: loaded.bytes, kind: imageKind(loaded.mime, loaded.bytes), mime: loaded.mime };
-}
-
-export async function embedImage(
-  pdfDoc: PDFDocument,
-  src: string | undefined,
-  warnings: WarningSink,
-  options: Pick<RenderHtmlToPdfOptions, "baseUrl" | "resourcePolicy"> = {},
-) {
-  if (!src) return null;
-  const loaded = await loadImage(src, warnings, options);
-  if (!loaded) return null;
-  try {
-    if (loaded.kind === "png") return await pdfDoc.embedPng(loaded.bytes);
-    if (loaded.kind === "jpg") return await pdfDoc.embedJpg(loaded.bytes);
-    if (loaded.kind === "svg") {
-      warnings.add("svg_image_unsupported", "SVG image embedding is not supported yet; pass a PNG/JPEG logo or QR image.");
-      return null;
-    }
-    warnings.add("image_type_unsupported", `Unsupported image type: ${loaded.mime}`);
-    return null;
-  } catch (error) {
-    warnings.add("image_embed_failed", `Failed to embed image: ${String(error)}`);
-    return null;
-  }
 }
 
 export function discoverFontPaths(): { regularPath?: string; boldPath?: string; italicPath?: string; boldItalicPath?: string } {

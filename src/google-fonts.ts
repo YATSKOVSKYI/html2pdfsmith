@@ -114,7 +114,24 @@ function isSupportedFontFile(path: string): boolean {
   }
 }
 
+function assertTrustedFontUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new FontLoadError(`Invalid font URL: "${url}"`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new FontLoadError(`Font URL must use HTTPS: "${url}"`);
+  }
+  const trusted = ["fonts.gstatic.com", "fonts.googleapis.com"];
+  if (!trusted.includes(parsed.hostname)) {
+    throw new FontLoadError(`Font URL is not from a trusted Google domain: "${url}"`);
+  }
+}
+
 async function downloadToCache(url: string, dest: string): Promise<void> {
+  assertTrustedFontUrl(url);
   const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new FontLoadError(`HTTP ${response.status} downloading font`);
   const bytes = new Uint8Array(await response.arrayBuffer());
