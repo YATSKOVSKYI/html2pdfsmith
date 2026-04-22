@@ -6,3 +6,6 @@ dist/
 .npmrc
 tmp/
 *.pdf
+
+# Claude Code worktrees
+.claude/worktrees/
