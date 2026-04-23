@@ -95,6 +95,7 @@
     "@types/pdfkit": "^0.17.6",
     "@types/svg-to-pdfkit": "^0.1.4",
     "bun-types": "latest",
+    "pdf-lib": "^1.17.1",
     "tsup": "^8.0.2",
     "typescript": "^5.8.0"
   },
