@@ -13,7 +13,7 @@ import {
   boxRadiusPt,
   cssLengthPt,
   fillBox,
-  normalizeFontFamily,
+  fontForStyle,
   strokeBox,
 } from "./layout";
 
@@ -30,25 +30,7 @@ export function lineGapForStyle(style: StyleMap, size: number, fallbackFactor: n
 }
 
 export function inlineFont(ctx: StreamContext, segment: ParsedInlineSegment, fallbackFont: string): string {
-  const family = normalizeFontFamily(segment.styles["font-family"]);
-  const weight = segment.styles["font-weight"];
-  const bold = weight === "bold" || Number(weight) >= 600;
-  const italic = (segment.styles["font-style"] ?? "").toLowerCase() === "italic";
-  if (family && ctx.fontFamilies.has(family)) {
-    const pair = ctx.fontFamilies.get(family)!;
-    if (bold && italic) return pair.boldItalic;
-    if (italic) return pair.italic;
-    return bold ? pair.bold : pair.regular;
-  }
-  if (family?.includes("mono") || family?.includes("courier")) {
-    if (bold && italic) return "Courier-BoldOblique";
-    if (italic) return "Courier-Oblique";
-    return bold ? "Courier-Bold" : "Courier";
-  }
-  if (italic && bold) return ctx.boldItalicFontName;
-  if (italic) return ctx.italicFontName;
-  if (bold) return ctx.boldFontName;
-  return fallbackFont;
+  return fontForStyle(ctx, segment.styles, fallbackFont, segment.text);
 }
 
 export function cssFontSizePt(value: string | undefined, fallbackSize: number): number {
@@ -414,7 +396,7 @@ export function inlineTextHeight(ctx: StreamContext, text: string, inlines: Pars
   const source = inlines.length > 0 ? inlines : [{ text, styles: {} }];
   if (needsManualInlineLayout(source)) return inlineManualHeight(ctx, source, fallbackFont, fallbackSize, COLORS.text, width, noWrap);
   const wrappedText = (noWrap ? source : wrappedInlineSegments(ctx, source, fallbackFont, fallbackSize, width)).map((segment) => segment.text).join("");
-  ctx.doc.font(fallbackFont).fontSize(maxSize);
+  ctx.doc.font(fontForStyle(ctx, {}, fallbackFont, wrappedText)).fontSize(maxSize);
   return ctx.doc.heightOfString(wrappedText || " ", { width: noWrap ? 100000 : width, lineGap, lineBreak: !noWrap });
 }
 

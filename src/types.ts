@@ -33,6 +33,14 @@ export interface PdfBundledFontFace {
   source?: string;
 }
 
+export interface PdfFallbackFontPath {
+  family: string;
+  regularPath: string;
+  boldPath?: string;
+  italicPath?: string;
+  boldItalicPath?: string;
+}
+
 export interface PdfFontOptions {
   regularPath?: string;
   boldPath?: string;
@@ -57,6 +65,16 @@ export interface PdfFontOptions {
    * inside the document, e.g. `font-family: "Roboto"`.
    */
   googleFonts?: string[];
+  /**
+   * Additional Google Font families used as CSS/font coverage fallbacks.
+   * They are resolved through the same disk cache as `googleFont` and
+   * `googleFonts`, and are only loaded when explicitly configured.
+   */
+  fallbackFonts?: string[];
+  /**
+   * Additional local font families used as CSS/font coverage fallbacks.
+   */
+  fallbackFontPaths?: PdfFallbackFontPath[];
   /**
    * Optional pre-bundled font face. Use this for offline/no-network rendering.
    * Takes priority over `googleFont` but is overridden by explicit paths/bytes.
@@ -112,6 +130,7 @@ export interface PdfPageTemplateOptions {
   align?: PdfPageTextAlign;
   fontSize?: number;
   color?: string;
+  fontFamily?: string;
 }
 
 export interface PdfPageNumberOptions {

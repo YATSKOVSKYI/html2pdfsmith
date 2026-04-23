@@ -3,9 +3,9 @@ import { Buffer } from "node:buffer";
 import { existsSync } from "node:fs";
 import { resolveFontPaths } from "../assets";
 import { parseBorderSideStyle, parseBorderStyle, parseBoxSpacing, parseLengthPx, type BoxSpacing, type BorderStyle, type StyleMap } from "../css";
-import { resolveGoogleFont } from "../google-fonts";
+import { isGoogleFontCached, resolveGoogleFont } from "../google-fonts";
 import { loadResource } from "../resources";
-import type { PageOrientation, ParsedCell, ParsedDocument, ParsedBlock, ParsedFontFace, ParsedInlineSegment, ParsedPageRule, ParsedRow, PdfBundledFontFace, PdfPageOptions, RenderHtmlToPdfOptions } from "../types";
+import type { PageOrientation, ParsedCell, ParsedDocument, ParsedBlock, ParsedFontFace, ParsedInlineSegment, ParsedPageRule, ParsedRow, PdfBundledFontFace, PdfFallbackFontPath, PdfPageOptions, RenderHtmlToPdfOptions } from "../types";
 import { clamp } from "../units";
 import type { WarningSink } from "../warnings";
 
@@ -51,6 +51,7 @@ export interface StreamContext {
   italicFontName: string;
   boldItalicFontName: string;
   fontFamilies: Map<string, RegisteredFontPair>;
+  fontResolver: FontResolver;
   watermarkAsset: LoadedPdfKitAsset | null;
   logoAsset: LoadedPdfKitAsset | null;
   qrAsset: LoadedPdfKitAsset | null;
@@ -62,6 +63,118 @@ export interface LoadedPdfKitAsset {
   bytes: Buffer;
   kind: "png" | "jpg" | "svg";
   svgText?: string;
+}
+
+interface PdfKitCurrentFont {
+  font?: {
+    hasGlyphForCodePoint?: (codePoint: number) => boolean;
+    glyphForCodePoint?: (codePoint: number) => { id?: number; codePoints?: number[] } | undefined;
+  };
+  characterSet?: number[];
+}
+
+interface PdfKitDocumentWithCurrentFont {
+  _font?: PdfKitCurrentFont;
+}
+
+export interface FontResolveRequest {
+  style?: StyleMap;
+  fallbackFont?: string;
+  text?: string;
+  defaultBold?: boolean;
+  defaultItalic?: boolean;
+}
+
+export class FontResolver {
+  private readonly coverageCache = new Map<string, Map<number, boolean>>();
+
+  constructor(
+    private readonly doc: PdfKitDocument,
+    private readonly defaults: RegisteredFontPair,
+    private readonly families: Map<string, RegisteredFontPair>,
+    private readonly fallbackFamilies: string[],
+  ) {}
+
+  resolve(request: FontResolveRequest = {}): string {
+    const style = request.style ?? {};
+    const fallbackFont = request.fallbackFont ?? this.defaults.regular;
+    const fontStyle = (style["font-style"] ?? "").trim().toLowerCase();
+    const weightRaw = (style["font-weight"] ?? "").trim().toLowerCase();
+    const weight = Number.parseInt(weightRaw, 10);
+    const bold = weightRaw
+      ? weightRaw === "bold" || Number.isFinite(weight) && weight >= 600
+      : request.defaultBold ?? (fallbackFont === this.defaults.bold || fallbackFont === this.defaults.boldItalic);
+    const italic = fontStyle
+      ? fontStyle === "italic" || fontStyle === "oblique"
+      : request.defaultItalic ?? (fallbackFont === this.defaults.italic || fallbackFont === this.defaults.boldItalic);
+    const stack = parseFontFamilyStack(style["font-family"]);
+    const candidates = this.candidateFonts(stack, bold, italic, fallbackFont);
+    return this.bestCoveredFont(candidates, request.text);
+  }
+
+  private candidateFonts(stack: string[], bold: boolean, italic: boolean, fallbackFont: string): string[] {
+    const candidates: string[] = [];
+    for (const family of stack) {
+      const generic = genericFont(family, bold, italic);
+      if (generic) candidates.push(generic);
+      const pair = this.families.get(family);
+      if (pair) candidates.push(pairFont(pair, bold, italic));
+    }
+    for (const family of this.fallbackFamilies) {
+      const pair = this.families.get(family);
+      if (pair) candidates.push(pairFont(pair, bold, italic));
+    }
+    candidates.push(fallbackFont, pairFont(this.defaults, bold, italic), this.defaults.regular);
+    return [...new Set(candidates)];
+  }
+
+  private bestCoveredFont(candidates: string[], text: string | undefined): string {
+    if (!text || !significantCodePoints(text).some((codePoint) => !isBasicWhitespace(codePoint))) {
+      return candidates[0] ?? this.defaults.regular;
+    }
+    const scored = candidates.map((font) => ({ font, score: this.coverageScore(font, text) }));
+    const full = scored.find((item) => item.score === 1);
+    return full?.font ?? scored.sort((a, b) => b.score - a.score)[0]?.font ?? candidates[0] ?? this.defaults.regular;
+  }
+
+  private coverageScore(fontName: string, text: string): number {
+    const points = significantCodePoints(text).filter((codePoint) => !isBasicWhitespace(codePoint));
+    if (points.length === 0) return 1;
+    let covered = 0;
+    for (const codePoint of points) {
+      if (this.coversCodePoint(fontName, codePoint)) covered += 1;
+    }
+    return covered / points.length;
+  }
+
+  private coversCodePoint(fontName: string, codePoint: number): boolean {
+    let cache = this.coverageCache.get(fontName);
+    if (!cache) {
+      cache = new Map();
+      this.coverageCache.set(fontName, cache);
+    }
+    const cached = cache.get(codePoint);
+    if (cached != null) return cached;
+    const covered = this.computeCoversCodePoint(fontName, codePoint);
+    cache.set(codePoint, covered);
+    return covered;
+  }
+
+  private computeCoversCodePoint(fontName: string, codePoint: number): boolean {
+    if (codePoint <= 0x7f) return true;
+    if (/^(Helvetica|Times|Courier)/.test(fontName)) return codePoint <= 0xff;
+    try {
+      this.doc.font(fontName);
+      const current = (this.doc as unknown as PdfKitDocumentWithCurrentFont)._font;
+      if (current?.font?.hasGlyphForCodePoint) return current.font.hasGlyphForCodePoint(codePoint);
+      const glyph = current?.font?.glyphForCodePoint?.(codePoint);
+      if (glyph?.id != null) return glyph.id !== 0;
+      if (current?.characterSet) return current.characterSet.includes(codePoint);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 export interface ImageDimensions {
@@ -470,18 +583,64 @@ export function normalizeFontFamily(value: string | undefined): string | undefin
   return first ? first.toLowerCase() : undefined;
 }
 
-export function fontForStyle(ctx: StreamContext, style: StyleMap, fallbackFont: string): string {
-  const family = normalizeFontFamily(style["font-family"]);
-  if (!family || family === "monospace") return fallbackFont;
-  const pair = ctx.fontFamilies.get(family);
-  if (!pair) return fallbackFont;
-  const fontStyle = (style["font-style"] ?? "").trim().toLowerCase();
-  const weight = Number.parseInt(style["font-weight"] ?? "", 10);
-  const bold = style["font-weight"] === "bold" || Number.isFinite(weight) && weight >= 600;
-  if (bold && fontStyle === "italic") return pair.boldItalic;
+export function parseFontFamilyStack(value: string | undefined): string[] {
+  if (!value) return [];
+  const families: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  for (const char of value) {
+    if ((char === "\"" || char === "'") && (!quote || quote === char)) {
+      quote = quote ? null : char;
+      continue;
+    }
+    if (char === "," && !quote) {
+      const normalized = normalizeFontFamily(current);
+      if (normalized) families.push(normalized);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  const normalized = normalizeFontFamily(current);
+  if (normalized) families.push(normalized);
+  return families;
+}
+
+export function genericFont(family: string, bold: boolean, italic: boolean): string | undefined {
+  if (family.includes("mono") || family.includes("courier")) {
+    if (bold && italic) return "Courier-BoldOblique";
+    if (italic) return "Courier-Oblique";
+    return bold ? "Courier-Bold" : "Courier";
+  }
+  if (family === "serif" || family.includes("times")) {
+    if (bold && italic) return "Times-BoldItalic";
+    if (italic) return "Times-Italic";
+    return bold ? "Times-Bold" : "Times-Roman";
+  }
+  return undefined;
+}
+
+export function pairFont(pair: RegisteredFontPair, bold: boolean, italic: boolean): string {
+  if (bold && italic) return pair.boldItalic;
   if (bold) return pair.bold;
-  if (fontStyle === "italic") return pair.italic;
+  if (italic) return pair.italic;
   return pair.regular;
+}
+
+export function significantCodePoints(text: string): number[] {
+  return Array.from(text).map((char) => char.codePointAt(0)).filter((codePoint): codePoint is number => codePoint != null);
+}
+
+export function isBasicWhitespace(codePoint: number): boolean {
+  return codePoint === 0x09 || codePoint === 0x0a || codePoint === 0x0d || codePoint === 0x20;
+}
+
+export function fontForStyle(ctx: StreamContext, style: StyleMap, fallbackFont: string, text?: string, defaultBold?: boolean, defaultItalic?: boolean): string {
+  const request: FontResolveRequest = { style, fallbackFont };
+  if (text !== undefined) request.text = text;
+  if (defaultBold !== undefined) request.defaultBold = defaultBold;
+  if (defaultItalic !== undefined) request.defaultItalic = defaultItalic;
+  return ctx.fontResolver.resolve(request);
 }
 
 export function blockMarginBottom(block: ParsedBlock): number {
@@ -497,16 +656,41 @@ export function blockMarginTop(block: ParsedBlock): number {
 }
 
 export function googleFontFamilies(options: RenderHtmlToPdfOptions): string[] {
-  const families = [options.font?.googleFont, ...(options.font?.googleFonts ?? [])]
+  const families = [options.font?.googleFont, ...(options.font?.googleFonts ?? []), ...(options.font?.fallbackFonts ?? [])]
     .map((family) => family?.trim())
     .filter((family): family is string => Boolean(family));
   return [...new Map(families.map((family) => [family.toLowerCase(), family])).values()];
+}
+
+export async function resolveConfiguredGoogleFont(family: string, options: RenderHtmlToPdfOptions, warnings: WarningSink): Promise<{ regularPath?: string; boldPath?: string; italicPath?: string; boldItalicPath?: string } | null> {
+  if (options.resourcePolicy?.allowHttp === false && !isGoogleFontCached(family)) {
+    warnings.add("google_font_http_blocked", `Google Font "${family}" is not cached and HTTP resources are blocked.`);
+    return null;
+  }
+  return resolveGoogleFont(family, warnings);
 }
 
 export function bundledFontFaces(options: RenderHtmlToPdfOptions): PdfBundledFontFace[] {
   const faces = [options.font?.bundled, ...(options.font?.bundledFonts ?? [])]
     .filter((face): face is PdfBundledFontFace => Boolean(face?.family && face.regularPath));
   return [...new Map(faces.map((face) => [face.family.trim().toLowerCase(), face])).values()];
+}
+
+export function fallbackFontPathFaces(options: RenderHtmlToPdfOptions): PdfFallbackFontPath[] {
+  const faces = options.font?.fallbackFontPaths ?? [];
+  return [...new Map(faces
+    .filter((face) => Boolean(face.family && face.regularPath))
+    .map((face) => [face.family.trim().toLowerCase(), face])).values()];
+}
+
+export function configuredFallbackFamilies(options: RenderHtmlToPdfOptions): string[] {
+  const families = [
+    ...(options.font?.fallbackFonts ?? []),
+    ...(options.font?.fallbackFontPaths ?? []).map((face) => face.family),
+  ];
+  return families
+    .map((family) => normalizeFontFamily(family))
+    .filter((family): family is string => Boolean(family));
 }
 
 export function registerFontPair(doc: PdfKitDocument, family: string, paths: { regularPath?: string; boldPath?: string; italicPath?: string; boldItalicPath?: string }, warnings: WarningSink): RegisteredFontPair | null {
@@ -592,14 +776,14 @@ export async function registerCssFontFaces(doc: PdfKitDocument, parsed: ParsedDo
   return families;
 }
 
-export async function registerFonts(doc: PdfKitDocument, parsed: ParsedDocument, options: RenderHtmlToPdfOptions, warnings: WarningSink): Promise<RegisteredFontPair & { families: Map<string, RegisteredFontPair> }> {
+export async function registerFonts(doc: PdfKitDocument, parsed: ParsedDocument, options: RenderHtmlToPdfOptions, warnings: WarningSink): Promise<RegisteredFontPair & { families: Map<string, RegisteredFontPair>; fallbackFamilies: string[] }> {
   const resolved = await resolveFontPaths(options.font, warnings, options.resourcePolicy);
   const regularPath = resolved.regularPath;
   const boldPath = resolved.boldPath ?? regularPath;
   const families = new Map<string, RegisteredFontPair>();
 
   for (const family of googleFontFamilies(options)) {
-    const paths = await resolveGoogleFont(family, warnings);
+    const paths = await resolveConfiguredGoogleFont(family, options, warnings);
     if (!paths) continue;
     const pair = registerFontPair(doc, family, paths, warnings);
     const normalized = normalizeFontFamily(family);
@@ -607,6 +791,12 @@ export async function registerFonts(doc: PdfKitDocument, parsed: ParsedDocument,
   }
 
   for (const face of bundledFontFaces(options)) {
+    const pair = registerFontPair(doc, face.family, face, warnings);
+    const normalized = normalizeFontFamily(face.family);
+    if (pair && normalized) families.set(normalized, pair);
+  }
+
+  for (const face of fallbackFontPathFaces(options)) {
     const pair = registerFontPair(doc, face.family, face, warnings);
     const normalized = normalizeFontFamily(face.family);
     if (pair && normalized) families.set(normalized, pair);
@@ -624,7 +814,7 @@ export async function registerFonts(doc: PdfKitDocument, parsed: ParsedDocument,
       else doc.registerFont("italic", regularPath);
       if (resolved.boldItalicPath && existsSync(resolved.boldItalicPath)) doc.registerFont("boldItalic", resolved.boldItalicPath);
       else doc.registerFont("boldItalic", boldPath ?? resolved.italicPath ?? regularPath);
-      return { regular: "regular", bold: "bold", italic: "italic", boldItalic: "boldItalic", families };
+      return { regular: "regular", bold: "bold", italic: "italic", boldItalic: "boldItalic", families, fallbackFamilies: configuredFallbackFamilies(options) };
     } catch (error) {
       warnings.add("font_register_failed", `Could not register custom font: ${String(error)}`);
     }
@@ -633,6 +823,6 @@ export async function registerFonts(doc: PdfKitDocument, parsed: ParsedDocument,
   if (families.size === 0) {
     warnings.add("font_fallback", "Falling back to Helvetica; pass explicit fonts for non-Latin text. This keeps the default memory footprint low.");
   }
-  return { regular: "Helvetica", bold: "Helvetica-Bold", italic: "Helvetica-Oblique", boldItalic: "Helvetica-BoldOblique", families };
+  return { regular: "Helvetica", bold: "Helvetica-Bold", italic: "Helvetica-Oblique", boldItalic: "Helvetica-BoldOblique", families, fallbackFamilies: configuredFallbackFamilies(options) };
 }
 

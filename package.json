@@ -1,10 +1,13 @@
 {
   "name": "html2pdfsmith",
-  "version": "0.1.4",
-  "description": "Browserless HTML-to-PDF rendering engine for TypeScript, Node.js, and Bun. No Chromium, low-memory streaming renderer, Google Fonts support with disk caching.",
+  "version": "0.1.5",
+  "description": "Browserless HTML-to-PDF rendering engine for TypeScript, Node.js, and Bun. No Chromium, low-memory streaming renderer, CSS font-family, Google Fonts caching, and local font installs.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "html2pdfsmith": "dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -15,10 +18,11 @@
     "dist",
     "docs/logo.svg",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup src/index.ts src/cli.ts --format esm --dts --clean",
     "typecheck": "tsc --noEmit",
     "prepack": "bun run build",
     "example": "bun run examples/simple-table.ts",
@@ -29,6 +33,7 @@
     "example:table-showcase": "bun run examples/table-showcase.ts",
     "example:resources": "bun run examples/base-url-resources.ts",
     "example:font-face": "bun run examples/font-face.ts",
+    "example:font-family-fallback": "bun run examples/font-family-fallback.ts",
     "example:page-wrap-repeat": "bun run examples/page-wrap-repeat.ts",
     "example:merged-table": "bun run examples/merged-table-pagination.ts",
     "example:wide-table": "bun run examples/wide-table-pagination.ts",

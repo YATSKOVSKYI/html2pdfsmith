@@ -463,6 +463,9 @@ const fontFallbackLoaded = await PDFDocument.load(fontFallback.pdf);
 if (fontFallbackLoaded.getPageCount() !== fontFallback.pages) {
   throw new Error("font table: reported page count mismatch");
 }
+if (fontFallback.warnings.some((warning) => warning.code === "font_fallback")) {
+  throw new Error(`font table: unexpected font fallback warning ${JSON.stringify(fontFallback.warnings)}`);
+}
 console.log({ name: "font-table-css", pages: fontFallback.pages, bytes: fontFallback.pdf.byteLength, warnings: fontFallback.warnings.length });
 
 for (const layer of ["background", "foreground", "both"] as const) {

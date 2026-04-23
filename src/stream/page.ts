@@ -36,7 +36,8 @@ export function drawWatermark(ctx: StreamContext, layer: "background" | "foregro
         const side = 24 + scale * 1.15;
         drawAssetSafely(ctx, asset, x, y, side, side, 1, "watermark");
       } else if (text) {
-        ctx.doc.font(ctx.boldFontName).fontSize(12 + scale * 0.16).fillColor("#555555").text(text, x, y, {
+        const font = ctx.fontResolver.resolve({ fallbackFont: ctx.boldFontName, text, defaultBold: true });
+        ctx.doc.font(font).fontSize(12 + scale * 0.16).fillColor("#555555").text(text, x, y, {
           width: step * 0.9,
           lineBreak: false,
         });
@@ -83,7 +84,12 @@ export function drawPageTemplate(ctx: StreamContext, template: RenderHtmlToPdfOp
   const text = template?.text?.trim();
   if (!template || !text || height <= 0) return;
   const fontSize = template.fontSize ?? 8;
-  ctx.doc.font(ctx.regularFontName).fontSize(fontSize).fillColor(template.color ?? "#59606b").text(text, ctx.margin, y + Math.max(0, (height - fontSize) / 2) - 1, {
+  const font = ctx.fontResolver.resolve({
+    style: template.fontFamily ? { "font-family": template.fontFamily } : {},
+    fallbackFont: ctx.regularFontName,
+    text,
+  });
+  ctx.doc.font(font).fontSize(fontSize).fillColor(template.color ?? "#59606b").text(text, ctx.margin, y + Math.max(0, (height - fontSize) / 2) - 1, {
     width: ctx.tableWidth,
     align: template.align ?? "left",
     lineBreak: false,
@@ -104,7 +110,8 @@ export function drawPageChrome(ctx: StreamContext): void {
   const pageNumbers = pageNumberSettings(ctx.options);
   if (!pageNumbers.enabled) return;
   const text = pageNumbers.format.replace(/\{page\}/g, String(ctx.pages)).replace(/\{total\}/g, "?");
-  ctx.doc.font(ctx.regularFontName).fontSize(pageNumbers.fontSize).fillColor(pageNumbers.color).text(text, ctx.margin, ctx.pageHeight - ctx.margin - footerHeight + Math.max(0, (footerHeight - pageNumbers.fontSize) / 2) - 1, {
+  const font = ctx.fontResolver.resolve({ fallbackFont: ctx.regularFontName, text });
+  ctx.doc.font(font).fontSize(pageNumbers.fontSize).fillColor(pageNumbers.color).text(text, ctx.margin, ctx.pageHeight - ctx.margin - footerHeight + Math.max(0, (footerHeight - pageNumbers.fontSize) / 2) - 1, {
     width: ctx.tableWidth,
     align: pageNumbers.align,
     lineBreak: false,
@@ -146,8 +153,9 @@ export function drawHeader(ctx: StreamContext): void {
     drawAssetSafely(ctx, ctx.logoAsset, ctx.margin, top, 60 + logoScale * 1.8, Math.min(42, headerHeight - 4), 1, "logo");
   } else {
     const brand = ctx.parsed.brandText || "DOCUMENT";
-    const fontSize = fitFontSize(ctx.doc, ctx.boldFontName, brand, 21, ctx.tableWidth * 0.42, 11);
-    ctx.doc.font(ctx.boldFontName).fontSize(fontSize).fillColor(COLORS.text).text(brand, ctx.margin, top, {
+    const brandFont = ctx.fontResolver.resolve({ fallbackFont: ctx.boldFontName, text: brand, defaultBold: true });
+    const fontSize = fitFontSize(ctx.doc, brandFont, brand, 21, ctx.tableWidth * 0.42, 11);
+    ctx.doc.font(brandFont).fontSize(fontSize).fillColor(COLORS.text).text(brand, ctx.margin, top, {
       width: ctx.tableWidth * 0.45,
       lineBreak: false,
     });
@@ -165,8 +173,9 @@ export function drawHeader(ctx: StreamContext): void {
     const maxWidth = Math.min(235, right - ctx.margin - 160);
     let y = top;
     for (const item of ctx.parsed.contactItems.slice(0, 5)) {
-      const fontSize = fitFontSize(ctx.doc, ctx.regularFontName, item, 8.5, maxWidth, 6.5);
-      ctx.doc.font(ctx.regularFontName).fontSize(fontSize).fillColor(COLORS.text).text(item, right - maxWidth, y, {
+      const font = ctx.fontResolver.resolve({ fallbackFont: ctx.regularFontName, text: item });
+      const fontSize = fitFontSize(ctx.doc, font, item, 8.5, maxWidth, 6.5);
+      ctx.doc.font(font).fontSize(fontSize).fillColor(COLORS.text).text(item, right - maxWidth, y, {
         width: maxWidth,
         align: "right",
         lineBreak: false,

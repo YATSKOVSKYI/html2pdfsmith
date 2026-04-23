@@ -10,6 +10,7 @@ import {
   clipBox,
   cssLengthPt,
   fillBox,
+  fontForStyle,
   pxToPt,
   spacingPt,
   strokeBox,
@@ -38,9 +39,8 @@ function blockColor(block: ParsedBlock): string {
 
 async function drawTextBlock(ctx: StreamContext, block: Extract<ParsedBlock, { type: "heading" | "paragraph" | "list-item" | "blockquote" | "preformatted" }>): Promise<void> {
   const size = blockFontSize(block);
-  const font = block.type === "heading" || block.style["font-weight"] === "bold" || Number(block.style["font-weight"]) >= 600
-    ? ctx.boldFontName
-    : ctx.regularFontName;
+  const defaultBold = block.type === "heading" || block.style["font-weight"] === "bold" || Number(block.style["font-weight"]) >= 600;
+  const font = fontForStyle(ctx, block.style, defaultBold ? ctx.boldFontName : ctx.regularFontName, block.text, defaultBold);
   const prefix = block.type === "list-item"
     ? block.ordered ? `${block.index}. ` : "- "
     : "";
@@ -156,7 +156,8 @@ function gridColumnWidths(style: StyleMap, availableWidth: number): number[] {
 async function estimateBlockHeight(ctx: StreamContext, block: ParsedBlock, width: number): Promise<number> {
   if (block.type === "heading" || block.type === "paragraph" || block.type === "list-item" || block.type === "blockquote" || block.type === "preformatted") {
     const size = blockFontSize(block);
-    const font = block.type === "heading" || block.style["font-weight"] === "bold" || Number(block.style["font-weight"]) >= 600 ? ctx.boldFontName : ctx.regularFontName;
+    const defaultBold = block.type === "heading" || block.style["font-weight"] === "bold" || Number(block.style["font-weight"]) >= 600;
+    const font = fontForStyle(ctx, block.style, defaultBold ? ctx.boldFontName : ctx.regularFontName, block.text, defaultBold);
     const box = textBoxStyle(block);
     const indent = block.type === "list-item" ? 14 : 0;
     const boxWidth = Math.max(20, width - box.margin.left - box.margin.right);

@@ -10,6 +10,7 @@ export type {
   ParsedTable,
   PdfBundledFontFace,
   PdfFontOptions,
+  PdfFallbackFontPath,
   PdfPageOptions,
   PdfTextOptions,
   PdfTableOptions,
@@ -26,6 +27,11 @@ export type {
   WatermarkLayer,
   WatermarkPattern,
 } from "./types";
+export type {
+  LoadFontManifestOptions,
+  PdfFontManifest,
+  PdfFontManifestFace,
+} from "./font-manifest";
 export type {
   ChartDashboardCard,
   ChartDashboardList,
@@ -53,6 +59,10 @@ export {
   isGoogleFontCached,
   getGoogleFontCacheDir,
 } from "./google-fonts";
+export {
+  fontOptionsFromManifest,
+  loadFontManifest,
+} from "./font-manifest";
 export { resolveFontPaths } from "./assets";
 export { protectPdfWithQpdf } from "./protect";
 export * from "./errors";

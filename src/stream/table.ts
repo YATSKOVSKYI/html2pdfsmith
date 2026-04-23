@@ -21,8 +21,8 @@ import {
   computeColumnWidths,
   cssLengthPt,
   fillBox,
+  fontForStyle,
   maxBoxRadius,
-  normalizeFontFamily,
   spacingPt,
   strokeBox,
   strokeCellBorder,
@@ -124,8 +124,10 @@ export function computeTableColumnWidths(ctx: StreamContext, table: ParsedTable,
 }
 
 export function fontForCell(ctx: StreamContext, cell: ParsedCell, row: ParsedRow): string {
-  if (row.kind === "header" || row.kind === "price" || row.kind === "section" || cell.isParam) return ctx.boldFontName;
-  return ctx.regularFontName;
+  const defaultBold = row.kind === "header" || row.kind === "price" || row.kind === "section" || cell.isParam;
+  const style = { ...row.styles, ...cell.styles };
+  const text = plainInlineText(cell.text, cell.inlines, style);
+  return fontForStyle(ctx, style, defaultBold ? ctx.boldFontName : ctx.regularFontName, text, defaultBold);
 }
 
 export function sizeForCell(ctx: StreamContext, cell: ParsedCell, row: ParsedRow): number {
@@ -136,24 +138,6 @@ export function sizeForCell(ctx: StreamContext, cell: ParsedCell, row: ParsedRow
   if (row.kind === "price") return ctx.priceFontSize;
   if (cell.isParam) return ctx.baseFontSize * 0.98;
   return ctx.baseFontSize;
-}
-
-export function fontForStyle(ctx: StreamContext, style: StyleMap, fallbackFont: string): string {
-  const family = normalizeFontFamily(style["font-family"]);
-  const weight = style["font-weight"];
-  const bold = weight === "bold" || Number(weight) >= 600;
-  const italic = (style["font-style"] ?? "").toLowerCase() === "italic";
-  if (family && ctx.fontFamilies.has(family)) {
-    const pair = ctx.fontFamilies.get(family)!;
-    if (bold && italic) return pair.boldItalic;
-    if (italic) return pair.italic;
-    if (bold) return pair.bold;
-    return pair.regular;
-  }
-  if (bold && italic) return ctx.boldItalicFontName;
-  if (italic) return ctx.italicFontName;
-  if (bold) return ctx.boldFontName;
-  return fallbackFont;
 }
 
 export function cellBlockFontSize(block: ParsedCellBlock, fallbackSize: number): number {
@@ -201,7 +185,7 @@ export function cellBlockVerticalAlign(style: StyleMap): CellVerticalAlign {
 
 export function richBlockTextWidth(ctx: StreamContext, block: Extract<ParsedCellBlock, { type: "text" | "heading" }>, fallbackFont: string, fallbackSize: number): number {
   const size = cellBlockFontSize(block, fallbackSize);
-  const font = fontForStyle(ctx, block.style, block.type === "heading" ? ctx.boldFontName : fallbackFont);
+  const font = fontForStyle(ctx, block.style, block.type === "heading" ? ctx.boldFontName : fallbackFont, block.text, block.type === "heading");
   const inlines = block.inlines.length > 0 ? block.inlines : [{ text: block.text, styles: block.style }];
   let width = 0;
   for (const segment of inlines) {
@@ -244,7 +228,7 @@ export function estimateRichBlockHeight(ctx: StreamContext, block: ParsedCellBlo
   }
 
   const size = cellBlockFontSize(block, fallbackSize);
-  const font = fontForStyle(ctx, block.style, block.type === "heading" ? ctx.boldFontName : fallbackFont);
+  const font = fontForStyle(ctx, block.style, block.type === "heading" ? ctx.boldFontName : fallbackFont, block.text, block.type === "heading");
   const contentWidth = Math.max(8, boxWidth - padding.left - padding.right - border.width * 2);
   const lineGap = lineGapForStyle(block.style, size, 0.18);
   const noWrap = isNoWrapStyle(block.style);
@@ -367,7 +351,7 @@ export async function drawRichBlock(
   }
 
   const size = cellBlockFontSize(block, fallbackSize);
-  const font = fontForStyle(ctx, block.style, block.type === "heading" ? ctx.boldFontName : fallbackFont);
+  const font = fontForStyle(ctx, block.style, block.type === "heading" ? ctx.boldFontName : fallbackFont, block.text, block.type === "heading");
   const textColor = parseCssColor(block.style["color"]) ?? fallbackColor;
   const contentX = drawX + border.width + padding.left;
   const contentY = drawY + border.width + padding.top;
@@ -494,9 +478,10 @@ export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number)
     const sectionAlign = sectionCell ? cellVerticalAlign(sectionCell, row) : "middle";
     const sectionWidth = Math.max(12, ctx.tableWidth - sectionPadding.left - sectionPadding.right);
     const sectionSize = sizeForCell(ctx, sectionCell ?? row.cells[0]!, row);
+    const sectionFont = sectionCell ? fontForCell(ctx, sectionCell, row) : fontForStyle(ctx, sectionStyle, ctx.boldFontName, text, true);
     const sectionLineGap = lineGapForStyle(sectionStyle, sectionSize, 0.18);
     const sectionInlines = sectionCell?.inlines ?? [{ text, styles: sectionStyle }];
-    const sectionTextHeight = inlineTextHeight(ctx, text, sectionInlines, ctx.boldFontName, sectionSize, sectionWidth, sectionLineGap);
+    const sectionTextHeight = inlineTextHeight(ctx, text, sectionInlines, sectionFont, sectionSize, sectionWidth, sectionLineGap);
     const textAlign = sectionStyle["text-align"] === "center" || sectionStyle["text-align"] === "right"
       ? sectionStyle["text-align"] as "center" | "right"
       : "left";
@@ -507,7 +492,7 @@ export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number)
       ctx.margin + sectionPadding.left,
       verticalContentY(y + sectionPadding.top, Math.max(1, height - sectionPadding.top - sectionPadding.bottom), sectionTextHeight, sectionAlign),
       sectionWidth,
-      ctx.boldFontName,
+      sectionFont,
       sectionSize,
       textColor,
       sectionLineGap,

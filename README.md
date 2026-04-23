@@ -52,7 +52,7 @@ Use it when you own the template and want stable PDF output for reports, invoice
 - Rich table cells with nested boxes, headings, paragraphs, images, clipped rounded content, and bounded absolute badges.
 - Images from PNG, JPEG, SVG, data URLs, local files, and HTTP(S) URLs, including aspect-ratio handling, `object-fit`, `object-position`, opacity, and PDF-native transforms.
 - Browserless charts through declarative `<chart>` blocks: bar, horizontal-bar, stacked-bar, line, area, sparkline, pie, donut, gauge, radial, radial-stacked, and radar.
-- Fonts through explicit file paths, in-memory bytes, CSS `@font-face`, optional bundled fonts, optional Google Fonts disk cache, and optional system font discovery.
+- Fonts through explicit file paths, in-memory bytes, CSS `@font-face`, optional bundled fonts, optional Google Fonts disk cache, project-local font installs, and optional system font discovery.
 - Resource loading policy for HTTP/file/data access, timeouts, and max CSS/image/font sizes.
 - Optional `qpdf` owner-password protection.
 - Warnings API for non-fatal rendering issues.
@@ -179,6 +179,8 @@ interface RenderHtmlToPdfResult {
 | `logoScale` | `number` | Logo image size scale |
 | `font.googleFont` | `string` | Google Fonts family name, cached to disk |
 | `font.googleFonts` | `string[]` | Additional Google Fonts selectable with CSS `font-family` |
+| `font.fallbackFonts` | `string[]` | Additional Google Font families used when the selected font does not cover the text |
+| `font.fallbackFontPaths` | `{ family, regularPath, boldPath? }[]` | Additional local fallback font families selectable by CSS and coverage fallback |
 | `font.bundled` | `PdfBundledFontFace` | Default offline font from an optional bundled-font package |
 | `font.bundledFonts` | `PdfBundledFontFace[]` | Additional offline fonts selectable with CSS `font-family` |
 | `font.regularPath` | `string` | Path to regular font |
@@ -788,6 +790,8 @@ import {
   resolveGoogleFont,
   isGoogleFontCached,
   getGoogleFontCacheDir,
+  loadFontManifest,
+  fontOptionsFromManifest,
 
   // PDF protection (requires qpdf in PATH or a custom path)
   protectPdfWithQpdf,
@@ -816,6 +820,10 @@ import type {
   PdfTextOptions,
   PdfTableOptions,
   PdfBundledFontFace,
+  PdfFallbackFontPath,
+  PdfFontManifest,
+  PdfFontManifestFace,
+  LoadFontManifestOptions,
   ParsedDocument,
   ParsedTable,
   ParsedRow,
@@ -865,6 +873,35 @@ td.body { font-family: "Open Sans"; }
 
 The optional package currently includes Open Sans, Ubuntu, Anton, Roboto Condensed, Merriweather, and Noto Sans. It lives outside the core renderer so the main package stays small.
 
+You can also install Google Fonts into your own project directory with the package CLI. This is useful when production must run offline, CI should be deterministic, or you want to commit reviewed font assets instead of relying on first-render downloads:
+
+```bash
+npx html2pdfsmith fonts install "Open Sans" "Anton" "Noto Sans SC" \
+  --out ./assets/pdf-fonts \
+  --default "Open Sans" \
+  --fallback "Noto Sans SC"
+```
+
+The command downloads only the requested families. Families named in `--default` or `--fallback` are installed too, so fallback configuration cannot point at a missing local font by accident. It copies the regular, bold, italic, and bold italic files into `./assets/pdf-fonts`, and writes:
+
+- `html2pdfsmith-fonts.json` - manifest for the renderer
+- `fonts.css` - optional `@font-face` declarations
+- `README.md` - short usage and licensing note
+
+Use the manifest at runtime:
+
+```ts
+import { loadFontManifest, renderHtmlToPdfDetailed } from "html2pdfsmith";
+
+const result = await renderHtmlToPdfDetailed({
+  html,
+  font: await loadFontManifest("./assets/pdf-fonts/html2pdfsmith-fonts.json"),
+  resourcePolicy: { allowHttp: false },
+});
+```
+
+Local installs are optional. Html2PdfSmith does not ship Google font files in the main package and does not create project font directories unless you run the CLI command.
+
 Google Fonts are useful when you do not want to vendor fonts:
 
 ```ts
@@ -891,6 +928,62 @@ th { font-family: "Inter"; font-weight: 700; text-align: center; }
 td.left { font-family: "Roboto"; text-align: left; padding-left: 14px; }
 td.center { font-family: "Lato"; text-align: center; font-size: 11pt; }
 td.money { font-family: "Merriweather"; text-align: right; font-weight: 700; }
+```
+
+Tables, flow blocks, inline spans, charts, watermarks, and page templates resolve CSS `font-family` through the same lightweight font resolver. The resolver respects the CSS stack, `font-weight`, and `font-style`, then falls back to the default regular/bold font when a family is unknown.
+
+For branded and multilingual PDFs, register only the families you need:
+
+```ts
+const result = await renderHtmlToPdfDetailed({
+  html,
+  font: {
+    googleFont: "Open Sans",
+    googleFonts: ["Anton", "Noto Sans SC"],
+    fallbackFonts: ["Noto Sans SC"],
+  },
+});
+```
+
+```css
+body {
+  font-family: "Open Sans", "Noto Sans SC", sans-serif;
+}
+
+.autocore-brand {
+  font-family: "Anton", sans-serif;
+}
+
+table {
+  font-family: "Open Sans", "Noto Sans SC", sans-serif;
+}
+```
+
+Open Sans does not cover CJK text. When mixed text such as `Vehicle report / 车辆报告` is rendered with the stack above, Html2PdfSmith checks font coverage and uses the first configured fallback family that can cover the text. The current implementation performs coverage-aware whole-text fallback per inline segment/cell; it is intentionally small and keeps the path open for finer per-character font runs later.
+
+Local fallback fonts can be registered without Google Fonts:
+
+```ts
+await renderHtmlToPdfDetailed({
+  html,
+  font: {
+    regularPath: "/fonts/OpenSans-Regular.ttf",
+    boldPath: "/fonts/OpenSans-Bold.ttf",
+    fallbackFontPaths: [
+      {
+        family: "Noto Sans SC",
+        regularPath: "/fonts/NotoSansSC-Regular.otf",
+        boldPath: "/fonts/NotoSansSC-Bold.otf",
+      },
+    ],
+  },
+});
+```
+
+Runnable example:
+
+```bash
+bun run example:font-family-fallback
 ```
 
 Google Fonts are downloaded on first use and cached to disk. Html2PdfSmith caches regular, bold, italic, and bold italic variants when the family provides them:
@@ -958,7 +1051,7 @@ This matters in production because Html2PdfSmith does not launch a separate Chro
 
 ## Package Contents
 
-The published npm package is intentionally small. The package includes the built `dist/` entrypoint, public docs, README, and license. It does not ship examples, generated PDFs, visual regression PNGs, or local benchmark output.
+The published npm package is intentionally small. The package includes the built `dist/` entrypoint and CLI, README, changelog, license, and the README logo. It does not ship examples, generated PDFs, visual regression PNGs, or local benchmark output.
 
 Check the package before publishing:
 
@@ -969,9 +1062,9 @@ npm pack --dry-run
 Recent dry run:
 
 ```text
-package size: 71.9 kB
-unpacked size: 306.5 kB
-total files: 8
+package size: 74.0 kB
+unpacked size: 312.9 kB
+total files: 10
 ```
 
 ## Development
@@ -997,6 +1090,7 @@ bun run example:bundled-fonts
 bun run example:table-showcase
 bun run example:resources
 bun run example:font-face
+bun run example:font-family-fallback
 bun run example:page-wrap-repeat
 bun run example:merged-table
 bun run example:wide-table
