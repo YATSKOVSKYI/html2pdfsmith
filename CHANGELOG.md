@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.10 - 2026-04-24
+
+### Enhanced
+
+- Added `safeNumber` validation for all dimension parameters (x, y, width, height) in rendering functions: `drawAsset()`, `drawAssetInBox()`, `drawWatermark()`, and `positionedStart()`.
+- Added `safeNumber` checks for opacity values to prevent NaN and infinite values from being passed to PDF rendering APIs.
+- Enhanced `asOpacity()` and `cssOpacity()` with safer numeric parsing and value clamping (0.01–1.0 range).
+- Improved safety in `drawShadowShape()` with dimension and opacity validation before shadow rendering.
+- All numeric parameters in asset rendering now use explicit fallback values for undefined, null, or non-finite inputs.
+
+### Notes
+
+- Safety enhancements are internal and maintain full backward compatibility.
+- Rendering continues gracefully with sensible defaults when invalid numeric inputs are provided.
+
 ## 0.1.9 - 2026-04-24
 
 ### Enhanced
