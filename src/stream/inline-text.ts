@@ -338,6 +338,71 @@ export function fallbackLineHeight(items: InlineLayoutItem[]): number {
   return Math.max(1, ...items.map((item) => item.visualHeight));
 }
 
+export interface TextBlockMetrics {
+  visualHeight: number;
+  layoutHeight: number;
+  baselineOffsetTop: number;
+  baselineOffsetBottom: number;
+  lineCount: number;
+}
+
+interface PdfKitFontMetricSource {
+  ascender?: number;
+  descender?: number;
+  capHeight?: number;
+  xHeight?: number;
+  unitsPerEm?: number;
+}
+
+interface PdfKitDocumentWithFontMetrics {
+  _font?: PdfKitFontMetricSource;
+}
+
+export function inlineLinesLayoutHeight(lines: InlineLayoutLine[], lineGap: number): number {
+  if (lines.length === 0) return 0;
+  return lines.reduce((sum, line) => sum + line.height, 0) + lineGap * Math.max(0, lines.length - 1);
+}
+
+export function currentFontMetricRatios(ctx: StreamContext, font: string): { ascender: number; descender: number; capHeight: number } {
+  ctx.doc.font(font);
+  const source = (ctx.doc as unknown as PdfKitDocumentWithFontMetrics)._font;
+  const units = Math.max(1, Math.abs(source?.unitsPerEm ?? 1000));
+  const ascender = Math.max(0.65, Math.min(1.15, Math.abs(source?.ascender ?? 760) / units));
+  const descender = Math.max(0.12, Math.min(0.45, Math.abs(source?.descender ?? 240) / units));
+  const capHeight = Math.max(0.5, Math.min(0.9, Math.abs(source?.capHeight ?? source?.xHeight ?? 700) / units));
+  return { ascender, descender, capHeight };
+}
+
+export function measureInlineLines(ctx: StreamContext, lines: InlineLayoutLine[], lineGap: number): TextBlockMetrics {
+  const layoutHeight = inlineLinesLayoutHeight(lines, lineGap);
+  if (lines.length === 0) {
+    return { visualHeight: 0, layoutHeight: 0, baselineOffsetTop: 0, baselineOffsetBottom: 0, lineCount: 0 };
+  }
+
+  let firstInsetTop = 0;
+  let lastInsetBottom = 0;
+  lines.forEach((line, index) => {
+    const maxSize = Math.max(1, ...line.items.map((item) => item.size));
+    const font = line.items.find((item) => item.text.trim())?.font ?? line.items[0]?.font;
+    const ratios = font ? currentFontMetricRatios(ctx, font) : { ascender: 0.76, descender: 0.24, capHeight: 0.7 };
+    const glyphHeight = Math.max(maxSize * 0.55, (ratios.capHeight + ratios.descender * 0.55) * maxSize);
+    const extra = Math.max(0, line.height - glyphHeight);
+    const topInset = Math.min(maxSize * 0.18, extra * 0.52);
+    const bottomInset = Math.min(maxSize * 0.22, extra - topInset);
+    if (index === 0) firstInsetTop = topInset;
+    if (index === lines.length - 1) lastInsetBottom = bottomInset;
+  });
+
+  const visualHeight = Math.max(1, layoutHeight - firstInsetTop - lastInsetBottom);
+  return {
+    visualHeight,
+    layoutHeight,
+    baselineOffsetTop: firstInsetTop,
+    baselineOffsetBottom: lastInsetBottom,
+    lineCount: lines.length,
+  };
+}
+
 export function inlineManualHeight(
   ctx: StreamContext,
   inlines: ParsedInlineSegment[],

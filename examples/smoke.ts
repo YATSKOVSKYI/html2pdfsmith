@@ -210,6 +210,197 @@ if (cellPagination.warnings.some((warning) => warning.code === "table_row_too_ta
 }
 console.log({ name: "cell-pagination", pages: cellPagination.pages, bytes: cellPagination.pdf.byteLength, warnings: cellPagination.warnings.length });
 
+const richCellPagination = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 portrait; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #9ca3af; padding: 7px; vertical-align: top; }
+    .rich-card { height: 900px; border: 1px solid #cbd5e1; background-color: #f8fafc; padding: 8px; }
+  </style></head><body>
+    <table>
+      <thead><tr><th>Rich</th><th>Text</th></tr></thead>
+      <tbody><tr><td><div class="rich-card">Rich block kept whole</div></td><td>${"Plain continuation text. ".repeat(260)}</td></tr></tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  table: { cellPagination: "rich-text" },
+  text: { overflowWrap: "break-word" },
+});
+const richCellPaginationLoaded = await PDFDocument.load(richCellPagination.pdf);
+if (richCellPaginationLoaded.getPageCount() !== richCellPagination.pages) {
+  throw new Error("rich cell pagination: reported page count mismatch");
+}
+if (!richCellPagination.warnings.some((warning) => warning.code === "table_cell_pagination_rich_content_unsupported")) {
+  throw new Error(`rich cell pagination: expected unsupported rich content warning ${JSON.stringify(richCellPagination.warnings)}`);
+}
+console.log({ name: "rich-cell-pagination-warning", pages: richCellPagination.pages, bytes: richCellPagination.pdf.byteLength, warnings: richCellPagination.warnings.length });
+
+const richTextPagination = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 portrait; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    thead { display: table-header-group; }
+    th, td { border: 1px solid #9ca3af; padding: 7px; vertical-align: top; }
+    p { margin: 0 0 5px; }
+    .blue { color: #2563eb; font-weight: 700; }
+  </style></head><body>
+    <table>
+      <thead><tr><th>Rich text</th><th>Peer</th></tr></thead>
+      <tbody><tr><td>${Array.from({ length: 95 }, (_, i) => `<p>Rich paragraph ${i + 1} with <span class="blue">inline style</span> and wrapped continuation text.</p>`).join("")}</td><td>Short peer cell</td></tr></tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  table: { cellPagination: "rich-text" },
+  text: { overflowWrap: "break-word" },
+});
+const richTextPaginationLoaded = await PDFDocument.load(richTextPagination.pdf);
+if (richTextPaginationLoaded.getPageCount() !== richTextPagination.pages || richTextPagination.pages < 2) {
+  throw new Error("rich text pagination: expected split rich text across multiple pages");
+}
+if (richTextPagination.warnings.some((warning) => warning.code === "table_row_too_tall")) {
+  throw new Error(`rich text pagination: row was clipped instead of paginated ${JSON.stringify(richTextPagination.warnings)}`);
+}
+console.log({ name: "rich-text-pagination", pages: richTextPagination.pages, bytes: richTextPagination.pdf.byteLength, warnings: richTextPagination.warnings.length });
+
+const rowspanCellPagination = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 portrait; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #9ca3af; padding: 7px; vertical-align: top; }
+  </style></head><body>
+    <table>
+      <tbody>
+        <tr><td rowspan="2">${"Merged owner continuation text. ".repeat(360)}</td><td>Peer</td></tr>
+        <tr><td>Tail</td></tr>
+      </tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  table: { cellPagination: "text", rowspanPagination: "split" },
+  text: { overflowWrap: "break-word" },
+});
+const rowspanCellPaginationLoaded = await PDFDocument.load(rowspanCellPagination.pdf);
+if (rowspanCellPaginationLoaded.getPageCount() !== rowspanCellPagination.pages || rowspanCellPagination.pages < 2) {
+  throw new Error("rowspan cell pagination: expected owner rowspan content to split across multiple pages");
+}
+if (rowspanCellPagination.warnings.some((warning) => warning.code === "table_cell_pagination_rowspan_unsupported" || warning.code === "table_row_too_tall")) {
+  throw new Error(`rowspan cell pagination: owner rowspan should paginate in split mode ${JSON.stringify(rowspanCellPagination.warnings)}`);
+}
+console.log({ name: "rowspan-owner-pagination", pages: rowspanCellPagination.pages, bytes: rowspanCellPagination.pdf.byteLength, warnings: rowspanCellPagination.warnings.length });
+
+const rowspanAvoidCellPagination = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 portrait; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #9ca3af; padding: 7px; vertical-align: top; }
+  </style></head><body>
+    <table>
+      <tbody>
+        <tr><td rowspan="2">Merged</td><td>${"Avoid-mode rowspan long text. ".repeat(360)}</td></tr>
+        <tr><td>Tail</td></tr>
+      </tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  table: { cellPagination: "text", rowspanPagination: "avoid" },
+  text: { overflowWrap: "break-word" },
+});
+const rowspanAvoidCellPaginationLoaded = await PDFDocument.load(rowspanAvoidCellPagination.pdf);
+if (rowspanAvoidCellPaginationLoaded.getPageCount() !== rowspanAvoidCellPagination.pages) {
+  throw new Error("rowspan avoid cell pagination: reported page count mismatch");
+}
+if (!rowspanAvoidCellPagination.warnings.some((warning) => warning.code === "table_cell_pagination_rowspan_unsupported")) {
+  throw new Error(`rowspan avoid cell pagination: expected conservative rowspan warning ${JSON.stringify(rowspanAvoidCellPagination.warnings)}`);
+}
+console.log({ name: "rowspan-avoid-pagination-warning", pages: rowspanAvoidCellPagination.pages, bytes: rowspanAvoidCellPagination.pdf.byteLength, warnings: rowspanAvoidCellPagination.warnings.length });
+
+const rowspanPlaceholderPagination = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 portrait; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    td { border: 1px solid #9ca3af; padding: 7px; vertical-align: top; }
+  </style></head><body>
+    <table>
+      <tbody>
+        <tr><td rowspan="2">Group label</td><td>Short intro</td></tr>
+        <tr><td>${"Long cell inside a split rowspan group. ".repeat(330)}</td></tr>
+      </tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  table: { cellPagination: "text", rowspanPagination: "split" },
+  text: { overflowWrap: "break-word" },
+});
+const rowspanPlaceholderPaginationLoaded = await PDFDocument.load(rowspanPlaceholderPagination.pdf);
+if (rowspanPlaceholderPaginationLoaded.getPageCount() !== rowspanPlaceholderPagination.pages || rowspanPlaceholderPagination.pages < 2) {
+  throw new Error("rowspan placeholder pagination: expected split row inside split rowspan group");
+}
+if (rowspanPlaceholderPagination.warnings.some((warning) => warning.code === "table_cell_pagination_rowspan_unsupported")) {
+  throw new Error(`rowspan placeholder pagination: placeholder row should be supported in split mode ${JSON.stringify(rowspanPlaceholderPagination.warnings)}`);
+}
+console.log({ name: "rowspan-placeholder-pagination", pages: rowspanPlaceholderPagination.pages, bytes: rowspanPlaceholderPagination.pdf.byteLength, warnings: rowspanPlaceholderPagination.warnings.length });
+
+const productionTableFit = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 landscape; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    thead { display: table-header-group; }
+    th, td { border: 1px solid #cbd5e1; vertical-align: middle; overflow-wrap: anywhere; }
+    th { background-color: #eef3f8; }
+  </style></head><body>
+    <table>
+      <thead><tr><th>Parameter</th>${Array.from({ length: 10 }, (_, i) => `<th>Config ${i + 1}</th>`).join("")}</tr></thead>
+      <tbody>${Array.from({ length: 16 }, (_, row) => `<tr><td>Параметр ${row + 1} ● mixed Latin/Cyrillic</td>${Array.from({ length: 10 }, (_, col) => `<td>${row % 3 === 0 ? "●" : row % 3 === 1 ? "○" : "-"} Value ${row + 1}.${col + 1}<br>Компактное значение</td>`).join("")}</tr>`).join("")}</tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  table: {
+    density: "dense",
+    fit: "page-width",
+    firstColumnWeight: 1.65,
+    minFontSize: 6.4,
+    maxFontSize: 9.2,
+    verticalAlignMode: "optical",
+  },
+  text: { overflowWrap: "break-word" },
+});
+const productionTableFitLoaded = await PDFDocument.load(productionTableFit.pdf);
+if (productionTableFitLoaded.getPageCount() !== productionTableFit.pages) {
+  throw new Error("production table fit: reported page count mismatch");
+}
+console.log({ name: "production-table-fit", pages: productionTableFit.pages, bytes: productionTableFit.pdf.byteLength, warnings: productionTableFit.warnings.length });
+
+const comparisonPreset = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 landscape; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    thead { display: table-header-group; }
+    th, td { border: 1px solid #cbd5e1; vertical-align: middle; overflow-wrap: anywhere; }
+    th { background-color: #eef3f8; }
+    .explicit-left { text-align: left; }
+  </style></head><body>
+    <table>
+      <thead><tr><th>Feature</th>${Array.from({ length: 8 }, (_, i) => `<th>Trim ${i + 1}</th>`).join("")}</tr></thead>
+      <tbody>${Array.from({ length: 12 }, (_, row) => `<tr><td class="explicit-left">Feature ${row + 1}</td>${Array.from({ length: 8 }, (_, col) => `<td>${row % 2 ? "Included" : "Optional"} ${col + 1}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  table: {
+    preset: "dense-comparison",
+    columnWeights: [1.8, 1, 1, 1, 1, 1, 1, 1, 1],
+  },
+  text: { overflowWrap: "break-word" },
+});
+const comparisonPresetLoaded = await PDFDocument.load(comparisonPreset.pdf);
+if (comparisonPresetLoaded.getPageCount() !== comparisonPreset.pages) {
+  throw new Error("comparison preset: reported page count mismatch");
+}
+console.log({ name: "comparison-preset", pages: comparisonPreset.pages, bytes: comparisonPreset.pdf.byteLength, warnings: comparisonPreset.warnings.length });
+
 const alignmentIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="8" y="8" width="48" height="48" rx="10" fill="#2563eb"/><circle cx="32" cy="30" r="11" fill="#fff"/></svg>`)}`;
 const alignment = await renderHtmlToPdfDetailed({
   html: `<!doctype html><html><head><style>

@@ -1,22 +1,71 @@
 # Changelog
 
-## 0.1.6 - 2026-04-24
+## 0.1.8 - 2026-04-24
 
 ### Added
 
-- Added `table.cellPagination: "off" | "text"` for splitting oversized plain text table cells across vertical page fragments.
-- Added table cell pagination smoke coverage for long automotive comparison-style cells with inline styling and repeated headers.
+- Added `table.preset: "comparison" | "compact-comparison" | "dense-comparison"` as a generic shortcut for production comparison tables.
+- Added `table.columnWeights` for exact generated column-width control without requiring a CSS `colgroup`.
+- Added table-level generated alignment defaults: `table.cellTextAlign`, `table.headerTextAlign`, and `table.firstColumnTextAlign`.
+- Added smoke coverage for comparison presets, generated column weights, CSS alignment precedence, rich text pagination, split-mode owner-rowspan pagination, conservative avoid-mode rowspan fallback, and split-mode rowspan placeholder pagination.
 
 ### Changed
 
-- Oversized non-rowspan table rows can now continue across pages line by line while preserving cell padding, backgrounds, borders, and inline text styles.
-- Split table cell fragments top-align continued content, while cells that fit fully in a fragment keep their requested `vertical-align`.
-- Rich table cell blocks and images remain whole-block content for now; unsupported oversized rich content emits a warning and falls back to existing clipped behavior.
+- Comparison presets now compose the stable table features introduced in `0.1.7`: page-width fitting, optical middle alignment, text cell pagination, density defaults, centered generated value columns, and left-aligned first columns.
+- Generated column widths now use one consistent weighting path for `columnWeights`, `firstColumnWeight`, fixed tables, and page-width fitted tables.
+- `cellPagination: "rich-text"` now paginates structural rich text/heading content, including text nested inside rich boxes, while preserving inline styles.
+- Image, positioned, and fixed-height rich content now follows atomic whole-block rules: move to a fresh page when it fits, otherwise emit deterministic warnings before using the clipped fallback.
+- `rowspanPagination: "split"` can now paginate long text in rows that start an owner `rowspan > 1` cell and in rows that contain rowspan placeholders, while `rowspanPagination: "avoid"` keeps the conservative grouped behavior.
+- Explicit CSS continues to have priority over presets and table-level defaults for `text-align`, `padding`, `font-size`, `line-height`, and `colgroup` widths.
+- The production comparison example now uses `preset: "dense-comparison"` to document the recommended high-level API.
+
+### Warnings and fallbacks
+
+- `table_cell_pagination_rich_content_unsupported` now describes atomic image, positioned, and fixed-height rich content that cannot be text-split.
+- `table_cell_pagination_rowspan_unsupported` is now limited to conservative `rowspanPagination: "avoid"` cases; `rowspanPagination: "split"` supports text fragments inside rowspan groups.
+- `table_cell_pagination_clipped_block` remains the explicit signal for an atomic rich/image block that cannot fit even on a fresh page.
+- `table_cell_pagination_no_progress`, `table_cell_pagination_fragment_too_small`, and `table_cell_pagination_forced_line` continue to protect pagination from infinite loops and impossible fragments.
 
 ### Notes
 
-- Cell content pagination is intentionally scoped to non-rowspan text/inlines in this release. Rowspan groups keep the existing `rowspanPagination` behavior, and unsupported rowspan split cases emit a warning.
+- `table.preset` is opt-in and backward-compatible. Existing tables without a preset keep their previous behavior.
+- Presets are generic and not tied to AutoCore or automotive content; they are intended for any wide comparison/report table.
+- `0.1.8` does not slice raster images or fixed-height positioned boxes across pages pixel-by-pixel; those remain atomic by design for stable PDF output.
+
+## 0.1.7 - 2026-04-24
+
+### Added
+
+- Added `table.cellPagination: "off" | "text" | "rich-text"` for splitting oversized table-cell text across vertical page fragments.
+- Added `table.verticalAlignMode: "layout" | "optical"` so `vertical-align: middle` can use optical text metrics in table cells.
+- Added reusable production table fit presets: `table.density`, `table.fit`, `table.firstColumnWeight`, `table.minFontSize`, and `table.maxFontSize`.
+- Added `examples/production-comparison-table.ts` and the `example:production-comparison` script for A4 landscape comparison-table rendering.
+- Added smoke coverage for long text cell continuation, multiple continuation cells, unsupported rich blocks, unsupported rowspan cases, dense table fit, Cyrillic/Latin mixed text, bullets, and repeated headers.
+
+### Changed
+
+- Table cell pagination now splits by wrapped inline layout lines rather than source text chunks, preserving inline styles inside fragments.
+- Multiple tall cells in the same row now maintain independent continuation cursors while short neighboring cells preserve the table grid, background, borders, and padding.
+- Continued cell fragments top-align their remaining text; cells that fully fit inside a fragment keep their requested `vertical-align`.
+- `compact` and `dense` density presets reduce only generated table font sizes, default padding, and default line-height, while explicit CSS remains stronger.
+- `fit: "page-width"` and `firstColumnWeight` provide predictable generated column widths for wide tables while preserving explicit `colgroup` widths.
+- README now documents the new pagination, optical alignment, density, fit, and production comparison-table APIs.
+
+### Warnings
+
+- Added `table_cell_pagination_rich_content_unsupported` for rich blocks/images that cannot be safely split yet.
+- Added `table_cell_pagination_rowspan_unsupported` when rowspan-connected rows cannot safely use cell content pagination.
+- Added `table_cell_pagination_no_progress` to stop pathological pagination loops deterministically.
+- Added `table_cell_pagination_fragment_too_small` and `table_cell_pagination_forced_line` for wrapped lines taller than the available fragment.
+- Added `table_cell_pagination_clipped_block` when a whole rich/image block must fall back to clipping.
+
+### Notes
+
+- Cell content pagination is intentionally scoped to non-rowspan text/inlines in this release. Rowspan groups keep the existing `rowspanPagination` behavior, and unsupported rowspan split cases emit `table_cell_pagination_rowspan_unsupported`.
 - Horizontal table pagination continues to work through the existing column-slice renderer.
+- Rich text block splitting is not claimed yet; `rich-text` currently paginates plain text/inlines and warns for rich blocks/images.
+- `table.verticalAlignMode` defaults to `"layout"` for backward compatibility. Enable `"optical"` explicitly for visually centered table text.
+- `table.density: "normal"` preserves current defaults. `compact` and `dense` are opt-in presets for production tables.
 
 ## 0.1.5 - 2026-04-23
 

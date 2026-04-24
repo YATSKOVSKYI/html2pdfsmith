@@ -159,10 +159,20 @@ interface RenderHtmlToPdfResult {
 | `repeatHeaders` | `boolean` | Repeat table headers on page breaks |
 | `tableHeaderRepeat` | `boolean \| "auto"` | Repeat table headers explicitly, or automatically for tables with headers |
 | `table.rowspanPagination` | `"avoid" \| "split"` | Keep rowspan-connected rows together when they fit on a fresh page |
+| `table.preset` | `"comparison" \| "compact-comparison" \| "dense-comparison"` | Apply generic comparison-table defaults; explicit options and CSS still win |
 | `table.horizontalPagination` | `"none" \| "auto" \| "always"` | Split wide tables into several horizontal page slices |
 | `table.horizontalPageColumns` | `number` | Maximum non-repeated source columns per horizontal slice |
 | `table.repeatColumns` | `number` | Number of left-side source columns repeated in every horizontal slice |
-| `table.cellPagination` | `"off" \| "text"` | Split oversized plain text table cells across vertical page fragments |
+| `table.cellPagination` | `"off" \| "text" \| "rich-text"` | Split oversized table-cell text across vertical page fragments; `rich-text` handles structural text blocks |
+| `table.verticalAlignMode` | `"layout" \| "optical"` | Use layout box math or optical text metrics for `vertical-align: middle` in table cells |
+| `table.density` | `"normal" \| "compact" \| "dense"` | Predictable table density preset for generated font size, padding, and line-height defaults |
+| `table.fit` | `"content" \| "page-width"` | Preserve content/CSS width or fit the table to the available page content width |
+| `table.firstColumnWeight` | `number` | Relative first-column width weight when generated widths are used |
+| `table.columnWeights` | `number[]` | Relative generated column widths, for example `[1.8, 1, 1, 1]`; explicit colgroup widths still win |
+| `table.cellTextAlign` | `"left" \| "center" \| "right"` | Default body cell alignment when CSS `text-align` is absent |
+| `table.headerTextAlign` | `"left" \| "center" \| "right"` | Default header cell alignment when CSS `text-align` is absent |
+| `table.firstColumnTextAlign` | `"left" \| "center" \| "right"` | Default first-column alignment when CSS `text-align` is absent |
+| `table.minFontSize` / `table.maxFontSize` | `number` | Clamp generated table font sizes; explicit CSS `font-size` still wins |
 | `text.overflowWrap` | `"normal" \| "break-word" \| "anywhere"` | Break long unspaced words/tokens instead of clipping them |
 | `page.size` | `"A4" \| "LETTER"` | PDF page size |
 | `page.orientation` | `"portrait" \| "landscape" \| "auto"` | Page orientation |
@@ -234,6 +244,11 @@ Common warning cases:
 | `table_row_too_tall` | A table row is taller than a fresh page and must be rendered sequentially |
 | `table_rowspan_group_too_tall` | Rows connected by `rowspan` cannot fit together on a fresh page |
 | `table_colspan_horizontal_split` | A wide `colspan` crossed a horizontal table slice boundary |
+| `table_cell_pagination_rich_content_unsupported` | Cell pagination met atomic image, positioned, or fixed-height rich content that cannot be text-split |
+| `table_cell_pagination_rowspan_unsupported` | A rowspan group stayed in conservative `avoid` mode instead of using text fragments |
+| `table_cell_pagination_no_progress` | Cell pagination stopped to avoid a pathological infinite loop |
+| `table_cell_pagination_fragment_too_small` / `table_cell_pagination_forced_line` | A wrapped line was taller than the available fragment and had to be forced |
+| `table_cell_pagination_clipped_block` | An atomic rich/image block could not fit in a fragment and fell back to clipping |
 | `qpdf_failed` | PDF protection failed; the unprotected PDF is returned with a warning |
 
 Resource policy failures are warnings by default. For example, if `allowHttp: false` blocks an HTTP image, the image is omitted and the PDF still renders. If your production policy must fail closed, throw from `onWarning`:
@@ -486,7 +501,39 @@ thead {
 }
 ```
 
-`table.cellPagination: "text"` lets an oversized non-rowspan row continue across pages by splitting plain text and inline-styled cell content line by line. Each continuation fragment keeps cell padding, background, borders, and header repetition. Rich blocks and images are kept whole; if they cannot fit in a fragment, the renderer emits a warning and uses the existing clipped fallback.
+`table.cellPagination: "text"` lets an oversized row continue across pages by splitting wrapped plain text and inline-styled cell content line by line. Each high cell keeps its own continuation cursor, so two long cells in one row can advance independently while short neighboring cells preserve the grid, background, and borders as empty continuation cells. `cellPagination: "rich-text"` also paginates structural text inside rich cells, including paragraph/heading text nested in boxes, while preserving inline styles. Image, positioned, and fixed-height rich blocks are treated as atomic blocks: when they fit on a fresh page they are moved whole instead of being split; when they cannot fit, the renderer emits `table_cell_pagination_rich_content_unsupported` / `table_cell_pagination_clipped_block` and uses the deterministic clipped fallback.
+
+For dense production comparison tables, use table presets instead of repeating application-level CSS:
+
+```ts
+await renderHtmlToPdfDetailed({
+  html,
+  page: { size: "A4", orientation: "landscape", marginMm: 8 },
+  tableHeaderRepeat: "auto",
+  table: {
+    preset: "dense-comparison",
+  },
+  text: { overflowWrap: "break-word" },
+});
+```
+
+The comparison presets are ordinary defaults: `comparison`, `compact-comparison`, and `dense-comparison` set page-width fitting, optical middle alignment, centered generated value columns, left-aligned first column, and text cell pagination. Explicit table options override preset values, and CSS on rows/cells still wins over generated defaults.
+
+For exact generated column control, pass weights:
+
+```ts
+await renderHtmlToPdfDetailed({
+  html,
+  table: {
+    preset: "dense-comparison",
+    columnWeights: [1.8, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+  },
+});
+```
+
+`density: "normal"` preserves defaults. `compact` and `dense` reduce only generated table font sizes, padding, and default line-height; explicit CSS `padding`, `font-size`, `line-height`, `text-align`, and `colgroup` widths continue to win. `verticalAlignMode: "optical"` applies optical text metrics only to table-cell `vertical-align: middle`; `top` and `bottom` remain layout-based.
+
+For rowspan groups, `cellPagination` keeps the conservative default behavior under `rowspanPagination: "avoid"`. With `rowspanPagination: "split"`, both rows that start an owner `rowspan > 1` text cell and rows that contain rowspan placeholders can paginate oversized text fragments while preserving repeated cell chrome and deterministic borders. Non-text atomic rich content inside a rowspan still follows the whole-block fallback rules above.
 
 Long unspaced tokens can be wrapped instead of clipped:
 

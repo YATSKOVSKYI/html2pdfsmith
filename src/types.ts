@@ -4,7 +4,11 @@ export type WatermarkLayer = "background" | "foreground" | "both";
 export type TableHeaderRepeat = boolean | "auto";
 export type TableRowspanPagination = "avoid" | "split";
 export type TableHorizontalPagination = "none" | "auto" | "always";
-export type TableCellPagination = "off" | "text";
+export type TableCellPagination = "off" | "text" | "rich-text";
+export type TableVerticalAlignMode = "layout" | "optical";
+export type TableDensity = "normal" | "compact" | "dense";
+export type TableFit = "content" | "page-width";
+export type TablePreset = "comparison" | "compact-comparison" | "dense-comparison";
 export type TextOverflowWrap = "normal" | "break-word" | "anywhere";
 
 export interface PdfStylesheetInput {
@@ -104,6 +108,10 @@ export interface PdfTextOptions {
 
 export interface PdfTableOptions {
   /**
+   * Opinionated generic table defaults. Explicit table options and CSS still win.
+   */
+  preset?: TablePreset;
+  /**
    * Keep rows connected by rowspan on one page whenever the group fits on a fresh page.
    * This mirrors spreadsheet/PDF-export behavior for merged vertical cells.
    */
@@ -125,9 +133,53 @@ export interface PdfTableOptions {
    * Split oversized plain text table cells across page fragments.
    *
    * `off` preserves historical row-level pagination. `text` paginates text/inlines
-   * in non-rowspan cells while keeping cell chrome on each continuation fragment.
+   * while keeping cell chrome on each continuation fragment. `rich-text` also
+   * paginates structural text/heading content nested in rich cells. Images,
+   * positioned blocks, and fixed-height rich blocks remain atomic whole-block
+   * fallbacks with warnings when they cannot fit.
    */
   cellPagination?: TableCellPagination;
+  /**
+   * Use layout box math or optical text metrics for `vertical-align: middle`.
+   * Defaults to `layout` for backward compatibility.
+   */
+  verticalAlignMode?: TableVerticalAlignMode;
+  /**
+   * Predictable density preset for table default font, padding, and line-height.
+   * Explicit CSS on rows/cells continues to win.
+   */
+  density?: TableDensity;
+  /**
+   * `page-width` makes table layout use the available page content width.
+   * `content` preserves the table's CSS/content width behavior.
+   */
+  fit?: TableFit;
+  /**
+   * Relative width weight for the first column when generated table widths are used.
+   * Explicit colgroup widths are preserved.
+   */
+  firstColumnWeight?: number;
+  /**
+   * Relative generated column weights. Explicit colgroup widths are preserved.
+   */
+  columnWeights?: number[];
+  /**
+   * Default text alignment for table cells without explicit CSS `text-align`.
+   */
+  cellTextAlign?: PdfPageTextAlign;
+  /**
+   * Default text alignment for header cells without explicit CSS `text-align`.
+   */
+  headerTextAlign?: PdfPageTextAlign;
+  /**
+   * Default text alignment for first-column cells without explicit CSS `text-align`.
+   */
+  firstColumnTextAlign?: PdfPageTextAlign;
+  /**
+   * Clamp generated table font sizes. Explicit CSS `font-size` is not clamped.
+   */
+  minFontSize?: number;
+  maxFontSize?: number;
 }
 
 export type PdfPageTextAlign = "left" | "center" | "right";
