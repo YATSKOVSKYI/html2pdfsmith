@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import { loadImage } from "../assets";
 import { parseCssColor, parseLengthPx, type StyleMap } from "../css";
 import type { RenderHtmlToPdfOptions } from "../types";
+import { safeNumber } from "../units";
 import type { WarningSink } from "../warnings";
 import {
   type BoxShadow,
@@ -41,12 +42,17 @@ export function getAsset(ctx: StreamContext, src: string): Promise<LoadedPdfKitA
 }
 
 export function drawAsset(doc: PdfKitDocument, asset: LoadedPdfKitAsset, x: number, y: number, width: number, height: number, opacity = 1, preserveAspectRatio = "xMidYMid meet"): void {
+  const safeX = safeNumber(x, 0);
+  const safeY = safeNumber(y, 0);
+  const safeWidth = Math.max(1, safeNumber(width, 1));
+  const safeHeight = Math.max(1, safeNumber(height, 1));
+  const safeOpacity = clamp(safeNumber(opacity, 1), 0, 1);
   doc.save();
-  doc.opacity(opacity);
+  doc.opacity(safeOpacity);
   if (asset.kind === "svg" && asset.svgText) {
-    SVGtoPDF(doc, asset.svgText, x, y, { width, height, preserveAspectRatio });
+    SVGtoPDF(doc, asset.svgText, safeX, safeY, { width: safeWidth, height: safeHeight, preserveAspectRatio });
   } else {
-    doc.image(asset.bytes, x, y, { width, height });
+    doc.image(asset.bytes, safeX, safeY, { width: safeWidth, height: safeHeight });
   }
   doc.restore();
 }
@@ -80,9 +86,12 @@ export function objectPositionFromStyle(styles: StyleMap | undefined): ObjectPos
 }
 
 export function positionedStart(containerStart: number, containerSize: number, itemSize: number, align: "left" | "center" | "right" | "top" | "bottom"): number {
-  if (align === "right" || align === "bottom") return containerStart + containerSize - itemSize;
-  if (align === "center") return containerStart + (containerSize - itemSize) / 2;
-  return containerStart;
+  const start = safeNumber(containerStart, 0);
+  const size = safeNumber(containerSize, 0);
+  const item = safeNumber(itemSize, 0);
+  if (align === "right" || align === "bottom") return start + size - item;
+  if (align === "center") return start + (size - item) / 2;
+  return start;
 }
 
 export function cssOpacity(styles: StyleMap | undefined, fallback = 1): number {
@@ -109,18 +118,20 @@ export function backgroundPositionStyles(styles: StyleMap): StyleMap {
 }
 
 export function backgroundTileSize(asset: LoadedPdfKitAsset, width: number, height: number, styles: StyleMap): { width: number; height: number } {
+  const safeWidth = Math.max(1, safeNumber(width, 1));
+  const safeHeight = Math.max(1, safeNumber(height, 1));
   const raw = (styles["background-size"] ?? "cover").trim().toLowerCase();
   const natural = imageDimensions(asset);
-  if (raw === "cover" || raw === "contain") return { width, height };
+  if (raw === "cover" || raw === "contain") return { width: safeWidth, height: safeHeight };
   if (raw === "auto") {
-    return natural ? { width: pxToPt(natural.width), height: pxToPt(natural.height) } : { width, height };
+    return natural ? { width: Math.max(1, pxToPt(natural.width)), height: Math.max(1, pxToPt(natural.height)) } : { width: safeWidth, height: safeHeight };
   }
 
   const parts = raw.split(/\s+/).filter(Boolean);
-  const cssWidth = cssLengthPt(parts[0], width);
-  const cssHeight = cssLengthPt(parts[1], height);
-  let tileWidth = cssWidth ?? (natural ? pxToPt(natural.width) : width);
-  let tileHeight = cssHeight ?? (natural ? pxToPt(natural.height) : height);
+  const cssWidth = cssLengthPt(parts[0], safeWidth);
+  const cssHeight = cssLengthPt(parts[1], safeHeight);
+  let tileWidth = cssWidth ?? (natural ? pxToPt(natural.width) : safeWidth);
+  let tileHeight = cssHeight ?? (natural ? pxToPt(natural.height) : safeHeight);
   if (natural && cssWidth != null && cssHeight == null) tileHeight = tileWidth * natural.height / natural.width;
   if (natural && cssHeight != null && cssWidth == null) tileWidth = tileHeight * natural.width / natural.height;
   return { width: Math.max(1, tileWidth), height: Math.max(1, tileHeight) };
@@ -398,36 +409,40 @@ export function drawAssetInBox(
   opacity = 1,
   label = "image",
 ): void {
+  const safeX = safeNumber(x, 0);
+  const safeY = safeNumber(y, 0);
+  const safeWidth = Math.max(1, safeNumber(width, 1));
+  const safeHeight = Math.max(1, safeNumber(height, 1));
   const fit = objectFitFromStyle(styles);
   const position = objectPositionFromStyle(styles);
   const natural = imageDimensions(asset);
-  const cssWidth = cssLengthPt(styles?.["width"], width);
-  const cssHeight = cssLengthPt(styles?.["height"], height);
-  let drawWidth = cssWidth ?? width;
-  let drawHeight = cssHeight ?? height;
+  const cssWidth = cssLengthPt(styles?.["width"], safeWidth);
+  const cssHeight = cssLengthPt(styles?.["height"], safeHeight);
+  let drawWidth = cssWidth ?? safeWidth;
+  let drawHeight = cssHeight ?? safeHeight;
 
   if (fit !== "fill" && natural) {
-    const targetRatio = width / Math.max(1, height);
+    const targetRatio = safeWidth / Math.max(1, safeHeight);
     const naturalRatio = natural.width / Math.max(1, natural.height);
     const scale = fit === "cover"
-      ? naturalRatio > targetRatio ? height / natural.height : width / natural.width
-      : naturalRatio > targetRatio ? width / natural.width : height / natural.height;
+      ? naturalRatio > targetRatio ? safeHeight / natural.height : safeWidth / natural.width
+      : naturalRatio > targetRatio ? safeWidth / natural.width : safeHeight / natural.height;
     if (cssWidth == null) drawWidth = natural.width * scale;
     if (cssHeight == null) drawHeight = natural.height * scale;
     if (cssWidth != null && cssHeight == null) drawHeight = drawWidth / naturalRatio;
     if (cssHeight != null && cssWidth == null) drawWidth = drawHeight * naturalRatio;
   }
 
-  drawWidth = Math.max(1, fit === "fill" && cssWidth == null ? width : drawWidth);
-  drawHeight = Math.max(1, fit === "fill" && cssHeight == null ? height : drawHeight);
-  const drawX = positionedStart(x, width, drawWidth, position.x);
-  const drawY = positionedStart(y, height, drawHeight, position.y);
+  drawWidth = Math.max(1, safeNumber(fit === "fill" && cssWidth == null ? safeWidth : drawWidth, 1));
+  drawHeight = Math.max(1, safeNumber(fit === "fill" && cssHeight == null ? safeHeight : drawHeight, 1));
+  const drawX = positionedStart(safeX, safeWidth, drawWidth, position.x);
+  const drawY = positionedStart(safeY, safeHeight, drawHeight, position.y);
   const preserveAspectRatio = fit === "fill" ? "none" : `x${position.x === "left" ? "Min" : position.x === "right" ? "Max" : "Mid"}Y${position.y === "top" ? "Min" : position.y === "bottom" ? "Max" : "Mid"} ${fit === "cover" ? "slice" : "meet"}`;
   const effectiveOpacity = clamp(opacity * cssOpacity(styles), 0, 1);
 
   try {
     ctx.doc.save();
-    ctx.doc.rect(x, y, Math.max(1, width), Math.max(1, height)).clip();
+    ctx.doc.rect(safeX, safeY, safeWidth, safeHeight).clip();
     applyCssTransform(ctx.doc, styles, drawX, drawY, drawWidth, drawHeight);
     drawAsset(ctx.doc, asset, drawX, drawY, drawWidth, drawHeight, effectiveOpacity, preserveAspectRatio);
     ctx.doc.restore();

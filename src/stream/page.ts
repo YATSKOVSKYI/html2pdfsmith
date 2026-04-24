@@ -1,4 +1,5 @@
 import type { RenderHtmlToPdfOptions } from "../types";
+import { safeNumber } from "../units";
 import { COLORS, type PdfKitDocument, type StreamContext, asOpacity, clamp, mm, pageLayout } from "./layout";
 import { drawAssetSafely } from "./assets";
 
@@ -20,11 +21,12 @@ export function drawWatermark(ctx: StreamContext, layer: "background" | "foregro
   const opacity = asOpacity(ctx.options.watermarkOpacity, 0.22);
   const scale = clamp(ctx.options.watermarkScale ?? 50, 1, 100);
   const step = 105 + scale * 2.7;
+  if (!Number.isFinite(step) || step <= 0) return;
   const angle = ctx.options.patternType === "honeycomb" ? 30 : 45;
-  const startX = ctx.margin;
-  const startY = ctx.margin;
-  const endX = ctx.pageWidth - ctx.margin;
-  const endY = ctx.pageHeight - ctx.margin;
+  const startX = safeNumber(ctx.margin, 0);
+  const startY = safeNumber(ctx.margin, 0);
+  const endX = safeNumber(ctx.pageWidth - ctx.margin, startX);
+  const endY = safeNumber(ctx.pageHeight - ctx.margin, startY);
 
   ctx.doc.save();
   ctx.doc.opacity(opacity);
@@ -51,7 +53,7 @@ export function drawWatermark(ctx: StreamContext, layer: "background" | "foregro
 
 export function pageTemplateHeight(template: RenderHtmlToPdfOptions["pageHeader"] | RenderHtmlToPdfOptions["pageFooter"]): number {
   if (!template?.text) return 0;
-  return mm(template.heightMm ?? 8);
+  return mm(safeNumber(template.heightMm, 8));
 }
 
 export function pageNumberSettings(options: RenderHtmlToPdfOptions): { enabled: boolean; format: string; align: "left" | "center" | "right"; fontSize: number; color: string } {
@@ -65,7 +67,7 @@ export function pageNumberSettings(options: RenderHtmlToPdfOptions): { enabled: 
     enabled: options.pageNumbers.enabled ?? true,
     format: options.pageNumbers.format ?? "Page {page}",
     align: options.pageNumbers.align ?? "center",
-    fontSize: options.pageNumbers.fontSize ?? 8,
+    fontSize: Math.max(1, safeNumber(options.pageNumbers.fontSize, 8)),
     color: options.pageNumbers.color ?? COLORS.text,
   };
 }
@@ -83,7 +85,7 @@ export function reservedFooterHeight(options: RenderHtmlToPdfOptions): number {
 export function drawPageTemplate(ctx: StreamContext, template: RenderHtmlToPdfOptions["pageHeader"] | RenderHtmlToPdfOptions["pageFooter"], y: number, height: number): void {
   const text = template?.text?.trim();
   if (!template || !text || height <= 0) return;
-  const fontSize = template.fontSize ?? 8;
+  const fontSize = Math.max(1, safeNumber(template.fontSize, 8));
   const font = ctx.fontResolver.resolve({
     style: template.fontFamily ? { "font-family": template.fontFamily } : {},
     fallbackFont: ctx.regularFontName,
@@ -146,7 +148,7 @@ export function drawHeader(ctx: StreamContext): void {
   if (ctx.options.hideHeader) return;
   const hasContacts = ctx.parsed.contactItems.length > 0 || !!ctx.qrAsset;
   const headerHeight = hasContacts ? mm(31) : mm(18);
-  const top = ctx.y;
+  const top = safeNumber(ctx.y, ctx.contentTop);
 
   if (ctx.logoAsset) {
     const logoScale = clamp(ctx.options.logoScale ?? 100, 1, 200);
@@ -170,7 +172,7 @@ export function drawHeader(ctx: StreamContext): void {
   }
 
   if (ctx.parsed.contactItems.length > 0) {
-    const maxWidth = Math.min(235, right - ctx.margin - 160);
+    const maxWidth = Math.max(1, Math.min(235, right - ctx.margin - 160));
     let y = top;
     for (const item of ctx.parsed.contactItems.slice(0, 5)) {
       const font = ctx.fontResolver.resolve({ fallbackFont: ctx.regularFontName, text: item });
@@ -188,6 +190,6 @@ export function drawHeader(ctx: StreamContext): void {
 }
 
 export function ensureSpace(ctx: StreamContext, height: number): void {
-  if (ctx.y + height > ctx.contentBottom) addPage(ctx);
+  if (safeNumber(ctx.y, 0) + Math.max(0, safeNumber(height, 0)) > ctx.contentBottom) addPage(ctx);
 }
 

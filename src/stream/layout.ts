@@ -6,7 +6,7 @@ import { parseBorderSideStyle, parseBorderStyle, parseBoxSpacing, parseLengthPx,
 import { isGoogleFontCached, resolveGoogleFont } from "../google-fonts";
 import { loadResource } from "../resources";
 import type { PageOrientation, ParsedCell, ParsedDocument, ParsedBlock, ParsedFontFace, ParsedInlineSegment, ParsedPageRule, ParsedRow, PdfBundledFontFace, PdfFallbackFontPath, PdfPageOptions, RenderHtmlToPdfOptions } from "../types";
-import { clamp } from "../units";
+import { clamp, safeNumber } from "../units";
 import type { WarningSink } from "../warnings";
 
 export { calculateFontScale, calculateHeaderCellHeight, calculatePaddingScale, clamp, determineOrientation, mm } from "../units";
@@ -312,9 +312,10 @@ export const CHART_THEMES: Record<string, { colors: string[]; grid: string; mute
 };
 
 export function asOpacity(value: number | undefined, fallback: number): number {
-  if (value == null) return fallback;
-  if (value <= 1) return clamp(value, 0.01, 1);
-  return clamp(0.15 + (1 - 0.15) * ((value - 1) / 99), 0.01, 1);
+  const fallbackOpacity = clamp(safeNumber(fallback, 0.22), 0.01, 1);
+  const numeric = safeNumber(value, fallbackOpacity);
+  if (numeric <= 1) return clamp(numeric, 0.01, 1);
+  return clamp(0.15 + (1 - 0.15) * ((numeric - 1) / 99), 0.01, 1);
 }
 
 export function pageLayout(orientation: PageOrientation): "portrait" | "landscape" {
@@ -330,15 +331,17 @@ export function effectivePageOptions(options: RenderHtmlToPdfOptions, pageRule: 
 }
 
 export function computeColumnWidths(columns: number, contentWidth: number): number[] {
-  if (columns <= 1) return [contentWidth];
-  const dataColumns = columns - 1;
-  const labelWidth = clamp(118 - Math.max(0, dataColumns - 4) * 4.5, 58, Math.min(155, contentWidth * 0.28));
-  const dataWidth = (contentWidth - labelWidth) / dataColumns;
+  const safeColumns = Math.max(1, Math.floor(safeNumber(columns, 1)));
+  const safeContentWidth = Math.max(1, safeNumber(contentWidth, 1));
+  if (safeColumns <= 1) return [safeContentWidth];
+  const dataColumns = safeColumns - 1;
+  const labelWidth = clamp(118 - Math.max(0, dataColumns - 4) * 4.5, 58, Math.min(155, safeContentWidth * 0.28));
+  const dataWidth = (safeContentWidth - labelWidth) / dataColumns;
   return [labelWidth, ...Array.from({ length: dataColumns }, () => dataWidth)];
 }
 
 export function pxToPt(value: number): number {
-  return value * 72 / 96;
+  return safeNumber(value, 0) * 72 / 96;
 }
 
 export function cssLengthPt(value: string | undefined, base = 0): number | undefined {
@@ -370,7 +373,9 @@ export function cssRadiusTokenPt(value: string | undefined, base: number): numbe
 }
 
 export function boxRadiusPt(styles: StyleMap, width: number, height: number): BoxRadius {
-  const base = Math.min(width, height);
+  const safeWidth = Math.max(0, safeNumber(width, 0));
+  const safeHeight = Math.max(0, safeNumber(height, 0));
+  const base = Math.min(safeWidth, safeHeight);
   const raw = (styles["border-radius"] ?? "").split("/")[0]?.trim() ?? "";
   const tokens = raw ? raw.split(/\s+/).filter(Boolean).slice(0, 4) : [];
   const values = tokens.map((token) => cssLengthPt(token, base) ?? 0);
@@ -390,7 +395,7 @@ export function boxRadiusPt(styles: StyleMap, width: number, height: number): Bo
   radius.bottomRight = cssRadiusTokenPt(styles["border-bottom-right-radius"], base) ?? radius.bottomRight;
   radius.bottomLeft = cssRadiusTokenPt(styles["border-bottom-left-radius"], base) ?? radius.bottomLeft;
 
-  radius = normalizeBoxRadius(radius, width, height);
+  radius = normalizeBoxRadius(radius, safeWidth, safeHeight);
   return radius;
 }
 
@@ -400,7 +405,9 @@ export function borderRadiusPt(styles: StyleMap, width: number, height: number):
 }
 
 export function normalizeBoxRadius(radius: BoxRadiusInput, width: number, height: number): BoxRadius {
-  const maxRadius = Math.max(0, Math.min(width, height) / 2);
+  const safeWidth = Math.max(0, safeNumber(width, 0));
+  const safeHeight = Math.max(0, safeNumber(height, 0));
+  const maxRadius = Math.max(0, Math.min(safeWidth, safeHeight) / 2);
   const out = typeof radius === "number"
     ? { topLeft: radius, topRight: radius, bottomRight: radius, bottomLeft: radius }
     : { ...radius };
@@ -415,10 +422,10 @@ export function normalizeBoxRadius(radius: BoxRadiusInput, width: number, height
   const left = out.topLeft + out.bottomLeft;
   const scale = Math.min(
     1,
-    top > 0 ? width / top : 1,
-    right > 0 ? height / right : 1,
-    bottom > 0 ? width / bottom : 1,
-    left > 0 ? height / left : 1,
+    top > 0 ? safeWidth / top : 1,
+    right > 0 ? safeHeight / right : 1,
+    bottom > 0 ? safeWidth / bottom : 1,
+    left > 0 ? safeHeight / left : 1,
   );
   if (scale < 1) {
     out.topLeft *= scale;
@@ -430,53 +437,73 @@ export function normalizeBoxRadius(radius: BoxRadiusInput, width: number, height
 }
 
 export function maxBoxRadius(radius: BoxRadiusInput): number {
-  if (typeof radius === "number") return radius;
-  return Math.max(radius.topLeft, radius.topRight, radius.bottomRight, radius.bottomLeft);
+  if (typeof radius === "number") return safeNumber(radius, 0);
+  return Math.max(
+    safeNumber(radius.topLeft, 0),
+    safeNumber(radius.topRight, 0),
+    safeNumber(radius.bottomRight, 0),
+    safeNumber(radius.bottomLeft, 0),
+  );
 }
 
 export function roundedBoxPath(ctx: StreamContext, x: number, y: number, width: number, height: number, radiusInput: BoxRadiusInput): void {
-  const radius = normalizeBoxRadius(radiusInput, width, height);
+  const safeX = safeNumber(x, 0);
+  const safeY = safeNumber(y, 0);
+  const safeWidth = Math.max(1, safeNumber(width, 1));
+  const safeHeight = Math.max(1, safeNumber(height, 1));
+  const radius = normalizeBoxRadius(radiusInput, safeWidth, safeHeight);
   ctx.doc
-    .moveTo(x + radius.topLeft, y)
-    .lineTo(x + width - radius.topRight, y);
-  if (radius.topRight > 0) ctx.doc.quadraticCurveTo(x + width, y, x + width, y + radius.topRight);
-  else ctx.doc.lineTo(x + width, y);
-  ctx.doc.lineTo(x + width, y + height - radius.bottomRight);
-  if (radius.bottomRight > 0) ctx.doc.quadraticCurveTo(x + width, y + height, x + width - radius.bottomRight, y + height);
-  else ctx.doc.lineTo(x + width, y + height);
-  ctx.doc.lineTo(x + radius.bottomLeft, y + height);
-  if (radius.bottomLeft > 0) ctx.doc.quadraticCurveTo(x, y + height, x, y + height - radius.bottomLeft);
-  else ctx.doc.lineTo(x, y + height);
-  ctx.doc.lineTo(x, y + radius.topLeft);
-  if (radius.topLeft > 0) ctx.doc.quadraticCurveTo(x, y, x + radius.topLeft, y);
-  else ctx.doc.lineTo(x, y);
+    .moveTo(safeX + radius.topLeft, safeY)
+    .lineTo(safeX + safeWidth - radius.topRight, safeY);
+  if (radius.topRight > 0) ctx.doc.quadraticCurveTo(safeX + safeWidth, safeY, safeX + safeWidth, safeY + radius.topRight);
+  else ctx.doc.lineTo(safeX + safeWidth, safeY);
+  ctx.doc.lineTo(safeX + safeWidth, safeY + safeHeight - radius.bottomRight);
+  if (radius.bottomRight > 0) ctx.doc.quadraticCurveTo(safeX + safeWidth, safeY + safeHeight, safeX + safeWidth - radius.bottomRight, safeY + safeHeight);
+  else ctx.doc.lineTo(safeX + safeWidth, safeY + safeHeight);
+  ctx.doc.lineTo(safeX + radius.bottomLeft, safeY + safeHeight);
+  if (radius.bottomLeft > 0) ctx.doc.quadraticCurveTo(safeX, safeY + safeHeight, safeX, safeY + safeHeight - radius.bottomLeft);
+  else ctx.doc.lineTo(safeX, safeY + safeHeight);
+  ctx.doc.lineTo(safeX, safeY + radius.topLeft);
+  if (radius.topLeft > 0) ctx.doc.quadraticCurveTo(safeX, safeY, safeX + radius.topLeft, safeY);
+  else ctx.doc.lineTo(safeX, safeY);
   ctx.doc.closePath();
 }
 
 export function fillBox(ctx: StreamContext, x: number, y: number, width: number, height: number, color: string, radius: BoxRadiusInput = 0): void {
-  if (maxBoxRadius(radius) > 0) roundedBoxPath(ctx, x, y, width, height, radius);
-  else ctx.doc.rect(x, y, width, height);
+  const safeX = safeNumber(x, 0);
+  const safeY = safeNumber(y, 0);
+  const safeWidth = Math.max(1, safeNumber(width, 1));
+  const safeHeight = Math.max(1, safeNumber(height, 1));
+  if (maxBoxRadius(radius) > 0) roundedBoxPath(ctx, safeX, safeY, safeWidth, safeHeight, radius);
+  else ctx.doc.rect(safeX, safeY, safeWidth, safeHeight);
   ctx.doc.fill(color);
 }
 
 export function strokeBox(ctx: StreamContext, x: number, y: number, width: number, height: number, border: BorderStyle, radius: BoxRadiusInput = 0): void {
-  if (border.width <= 0 || border.style === "none") return;
+  const borderWidth = safeNumber(border.width, 0);
+  if (borderWidth <= 0 || border.style === "none") return;
+  const safeX = safeNumber(x, 0);
+  const safeY = safeNumber(y, 0);
+  const safeWidth = Math.max(1, safeNumber(width, 1));
+  const safeHeight = Math.max(1, safeNumber(height, 1));
   ctx.doc.save();
-  ctx.doc.strokeColor(border.color ?? COLORS.border).lineWidth(border.width);
-  if (border.style === "dashed") ctx.doc.dash(Math.max(2, border.width * 3), { space: Math.max(2, border.width * 2) });
-  if (border.style === "dotted") ctx.doc.dash(Math.max(0.7, border.width), { space: Math.max(1.4, border.width * 2) });
-  if (maxBoxRadius(radius) > 0) roundedBoxPath(ctx, x, y, width, height, radius);
-  else ctx.doc.rect(x, y, width, height);
+  ctx.doc.strokeColor(border.color ?? COLORS.border).lineWidth(borderWidth);
+  if (border.style === "dashed") ctx.doc.dash(Math.max(2, borderWidth * 3), { space: Math.max(2, borderWidth * 2) });
+  if (border.style === "dotted") ctx.doc.dash(Math.max(0.7, borderWidth), { space: Math.max(1.4, borderWidth * 2) });
+  if (maxBoxRadius(radius) > 0) roundedBoxPath(ctx, safeX, safeY, safeWidth, safeHeight, radius);
+  else ctx.doc.rect(safeX, safeY, safeWidth, safeHeight);
   ctx.doc.stroke();
   ctx.doc.undash();
   ctx.doc.restore();
 }
 
 export function clipBox(ctx: StreamContext, x: number, y: number, width: number, height: number, radius: BoxRadiusInput = 0): void {
-  const safeWidth = Math.max(1, width);
-  const safeHeight = Math.max(1, height);
-  if (maxBoxRadius(radius) > 0) roundedBoxPath(ctx, x, y, safeWidth, safeHeight, radius);
-  else ctx.doc.rect(x, y, safeWidth, safeHeight);
+  const safeX = safeNumber(x, 0);
+  const safeY = safeNumber(y, 0);
+  const safeWidth = Math.max(1, safeNumber(width, 1));
+  const safeHeight = Math.max(1, safeNumber(height, 1));
+  if (maxBoxRadius(radius) > 0) roundedBoxPath(ctx, safeX, safeY, safeWidth, safeHeight, radius);
+  else ctx.doc.rect(safeX, safeY, safeWidth, safeHeight);
   ctx.doc.clip();
 }
 
