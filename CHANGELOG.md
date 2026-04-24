@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.11 - 2026-04-24
+
+### Fixed
+
+- Fixed NaN propagation from PDFKit's `widthOfString()` when font resources are blocked or uncached (e.g., "Noto Sans SC" without HTTP/cache).
+- Wrapped all `widthOfString()` calls in [src/stream/inline-text.ts](src/stream/inline-text.ts), [src/stream/table.ts](src/stream/table.ts), and [src/stream/charts.ts](src/stream/charts.ts) with `safeNumber(..., 0)` fallback.
+- Re-exported `safeNumber` from [src/stream/layout.ts](src/stream/layout.ts) to unify numeric safety across rendering modules.
+- NaN no longer propagates into table column widths, inline item dimensions, or PDFKit drawing calls.
+
+### Details
+
+- **Root cause:** When a font is unavailable, PDFKit's `widthOfString()` returns NaN. Without validation, this flowed through `Math.max(1, NaN + 2)` → NaN → downstream dimension calculations → "unsupported number: NaN" error in PDFKit.
+- **Impact:** Rendering now gracefully falls back to 0-width items instead of throwing. Column widths, text layout, and chart dimensions continue safely.
+- **Scope:** 4 modules, 8 `widthOfString()` call sites now guarded. No API changes.
+
 ## 0.1.10 - 2026-04-24
 
 ### Enhanced
