@@ -538,13 +538,18 @@ export function cellBorders(ctx: StreamContext, cell: ParsedCell): CellBorderSty
 }
 
 export function strokeBorderLine(ctx: StreamContext, border: BorderStyle, x1: number, y1: number, x2: number, y2: number, fallbackColor: string): void {
-  if (border.width <= 0 || border.style === "none") return;
-  const lineWidth = ctx.currentTableStyle.borderCollapse ? Math.max(0.2, border.width * 0.75) : border.width;
+  const borderWidth = Math.max(0, safeNumber(border.width, 0));
+  if (borderWidth <= 0 || border.style === "none") return;
+  const lineWidth = ctx.currentTableStyle.borderCollapse ? Math.max(0.2, borderWidth * 0.75) : borderWidth;
+  const sx1 = safeNumber(x1, 0);
+  const sy1 = safeNumber(y1, 0);
+  const sx2 = safeNumber(x2, sx1);
+  const sy2 = safeNumber(y2, sy1);
   ctx.doc.save();
   ctx.doc.strokeColor(border.color ?? fallbackColor).lineWidth(lineWidth);
   if (border.style === "dashed") ctx.doc.dash(Math.max(2, lineWidth * 3), { space: Math.max(2, lineWidth * 2) });
   if (border.style === "dotted") ctx.doc.dash(Math.max(0.7, lineWidth), { space: Math.max(1.4, lineWidth * 2) });
-  ctx.doc.moveTo(x1, y1).lineTo(x2, y2).stroke();
+  ctx.doc.moveTo(sx1, sy1).lineTo(sx2, sy2).stroke();
   ctx.doc.undash();
   ctx.doc.restore();
 }
@@ -852,4 +857,3 @@ export async function registerFonts(doc: PdfKitDocument, parsed: ParsedDocument,
   }
   return { regular: "Helvetica", bold: "Helvetica-Bold", italic: "Helvetica-Oblique", boldItalic: "Helvetica-BoldOblique", families, fallbackFamilies: configuredFallbackFamilies(options) };
 }
-

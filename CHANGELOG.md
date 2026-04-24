@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.13 - 2026-04-24
+
+### Fixed
+
+- Added a PDFKit numeric safety layer that sanitizes non-finite numbers before drawing calls such as `text`, `rect`, `fontSize`, `lineWidth`, transforms, images, and opacity.
+- Added `pdfkit_nonfinite_number_sanitized` warnings so production logs identify the exact PDFKit method that received a bad number.
+- Hardened border strokes, box shadows, and CSS transform origins against `NaN` dimensions from CSS/layout calculations.
+
+### Details
+
+- This catches remaining `unsupported number: NaN` failures that occur after HTML generation, even when the original source is deep in table, chart, inline text, image, or CSS shadow/transform rendering.
+- The warning is emitted once per affected PDFKit method to avoid flooding large documents.
+
 ## 0.1.11 - 2026-04-24
 
 ### Fixed

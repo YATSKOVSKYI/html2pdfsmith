@@ -23,6 +23,7 @@ import {
 import { loadPdfKitAsset } from "./stream/assets";
 import { drawHeader, drawPageChrome, drawWatermark, finishPage, pageNumberSettings, reservedFooterHeight, reservedHeaderHeight } from "./stream/page";
 import { drawBlock } from "./stream/flow";
+import { patchPdfKitNumberSafety } from "./stream/pdfkit-safety";
 
 async function createStreamContext(options: RenderHtmlToPdfOptions, parsed: ParsedDocument, warnings: WarningSink): Promise<{ ctx: StreamContext; done: Promise<Buffer> }> {
   const columns = maxDocumentColumns(parsed);
@@ -43,6 +44,7 @@ async function createStreamContext(options: RenderHtmlToPdfOptions, parsed: Pars
     },
   });
   const done = chunksToBuffer(doc);
+  patchPdfKitNumberSafety(doc, warnings);
   doc.on("pageAdded", () => {
     // Keep our public stats tied to the actual PDFKit page count.
     // The renderer itself avoids implicit page breaks, but this catches regressions.

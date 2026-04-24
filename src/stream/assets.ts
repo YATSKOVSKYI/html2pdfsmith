@@ -245,16 +245,31 @@ export function parseBoxShadows(styles: StyleMap): BoxShadow[] {
 }
 
 export function drawShadowShape(ctx: StreamContext, x: number, y: number, width: number, height: number, radius: number, color: string, opacity: number): void {
-  if (width <= 0 || height <= 0 || opacity < 0.0005) return;
+  const safeX = safeNumber(x, 0);
+  const safeY = safeNumber(y, 0);
+  const safeWidth = Math.max(0, safeNumber(width, 0));
+  const safeHeight = Math.max(0, safeNumber(height, 0));
+  const safeRadius = Math.max(0, safeNumber(radius, 0));
+  const safeOpacity = clamp(safeNumber(opacity, 0), 0, 0.65);
+  if (safeWidth <= 0 || safeHeight <= 0 || safeOpacity < 0.0005) return;
   ctx.doc.save();
-  ctx.doc.opacity(clamp(opacity, 0, 0.65));
-  fillBox(ctx, x, y, width, height, color, radius);
+  ctx.doc.opacity(safeOpacity);
+  fillBox(ctx, safeX, safeY, safeWidth, safeHeight, color, safeRadius);
   ctx.doc.restore();
   ctx.doc.opacity(1);
 }
 
 export function drawOuterBoxShadow(ctx: StreamContext, shadow: BoxShadow, x: number, y: number, width: number, height: number, radius: number): void {
-  const blur = Math.max(0, shadow.blur);
+  const safeX = safeNumber(x, 0);
+  const safeY = safeNumber(y, 0);
+  const safeWidth = Math.max(0, safeNumber(width, 0));
+  const safeHeight = Math.max(0, safeNumber(height, 0));
+  const safeRadius = Math.max(0, safeNumber(radius, 0));
+  const blur = Math.max(0, safeNumber(shadow.blur, 0));
+  const spread = safeNumber(shadow.spread, 0);
+  const offsetX = safeNumber(shadow.offsetX, 0);
+  const offsetY = safeNumber(shadow.offsetY, 0);
+  const opacity = safeNumber(shadow.opacity, 0);
   const layers = blur > 0 ? clamp(Math.ceil(blur * 1.65), 10, 36) : 1;
   const weights = Array.from({ length: layers }, (_, index) => {
     const ratio = (index + 1) / layers;
@@ -264,30 +279,37 @@ export function drawOuterBoxShadow(ctx: StreamContext, shadow: BoxShadow, x: num
   for (let i = layers; i >= 1; i--) {
     const ratio = i / layers;
     const eased = 1 - Math.pow(1 - ratio, 1.35);
-    const expansion = shadow.spread + blur * eased;
-    const sx = x + shadow.offsetX - expansion;
-    const sy = y + shadow.offsetY - expansion;
-    const sw = width + expansion * 2;
-    const sh = height + expansion * 2;
+    const expansion = spread + blur * eased;
+    const sx = safeX + offsetX - expansion;
+    const sy = safeY + offsetY - expansion;
+    const sw = safeWidth + expansion * 2;
+    const sh = safeHeight + expansion * 2;
     const alpha = blur > 0
-      ? shadow.opacity * 1.08 * weights[i - 1]! / weightTotal
-      : shadow.opacity;
-    drawShadowShape(ctx, sx, sy, sw, sh, Math.max(0, radius + expansion), shadow.color, alpha);
+      ? opacity * 1.08 * weights[i - 1]! / weightTotal
+      : opacity;
+    drawShadowShape(ctx, sx, sy, sw, sh, Math.max(0, safeRadius + expansion), shadow.color, alpha);
   }
 }
 
 export function drawInsetBoxShadow(ctx: StreamContext, shadow: BoxShadow, x: number, y: number, width: number, height: number, radius: number): void {
-  const blur = Math.max(0, shadow.blur);
-  const spread = Math.max(0, shadow.spread);
+  const safeX = safeNumber(x, 0);
+  const safeY = safeNumber(y, 0);
+  const safeWidth = Math.max(0, safeNumber(width, 0));
+  const safeHeight = Math.max(0, safeNumber(height, 0));
+  const safeRadius = Math.max(0, safeNumber(radius, 0));
+  const blur = Math.max(0, safeNumber(shadow.blur, 0));
+  const spread = Math.max(0, safeNumber(shadow.spread, 0));
+  const offsetX = safeNumber(shadow.offsetX, 0);
+  const offsetY = safeNumber(shadow.offsetY, 0);
   const edge = Math.max(1, blur * 0.45 + spread);
   ctx.doc.save();
-  clipBox(ctx, x, y, width, height, radius);
-  const opacity = clamp(shadow.opacity * 0.55, 0.005, 0.35);
+  clipBox(ctx, safeX, safeY, safeWidth, safeHeight, safeRadius);
+  const opacity = clamp(safeNumber(shadow.opacity, 0) * 0.55, 0.005, 0.35);
   ctx.doc.opacity(opacity);
-  ctx.doc.rect(x + shadow.offsetX, y + shadow.offsetY, width, Math.min(edge, height)).fill(shadow.color);
-  ctx.doc.rect(x + shadow.offsetX, y + height - edge + shadow.offsetY, width, Math.min(edge, height)).fill(shadow.color);
-  ctx.doc.rect(x + shadow.offsetX, y + shadow.offsetY, Math.min(edge, width), height).fill(shadow.color);
-  ctx.doc.rect(x + width - edge + shadow.offsetX, y + shadow.offsetY, Math.min(edge, width), height).fill(shadow.color);
+  ctx.doc.rect(safeX + offsetX, safeY + offsetY, safeWidth, Math.min(edge, safeHeight)).fill(shadow.color);
+  ctx.doc.rect(safeX + offsetX, safeY + safeHeight - edge + offsetY, safeWidth, Math.min(edge, safeHeight)).fill(shadow.color);
+  ctx.doc.rect(safeX + offsetX, safeY + offsetY, Math.min(edge, safeWidth), safeHeight).fill(shadow.color);
+  ctx.doc.rect(safeX + safeWidth - edge + offsetX, safeY + offsetY, Math.min(edge, safeWidth), safeHeight).fill(shadow.color);
   ctx.doc.restore();
   ctx.doc.opacity(1);
 }
@@ -346,30 +368,36 @@ export function transformOriginAxis(token: string | undefined, base: number, axi
 }
 
 export function transformOrigin(styles: StyleMap | undefined, width: number, height: number): CssTransformOrigin {
+  const safeWidth = safeNumber(width, 0);
+  const safeHeight = safeNumber(height, 0);
   const tokens = transformOriginValue(styles).toLowerCase().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return { x: width / 2, y: height / 2 };
+  if (tokens.length === 0) return { x: safeWidth / 2, y: safeHeight / 2 };
   let x: number | undefined;
   let y: number | undefined;
 
   for (const token of tokens) {
-    x ??= transformOriginAxis(token, width, "x");
-    y ??= transformOriginAxis(token, height, "y");
+    x ??= transformOriginAxis(token, safeWidth, "x");
+    y ??= transformOriginAxis(token, safeHeight, "y");
   }
 
   if (tokens.length >= 2) {
-    x = transformOriginAxis(tokens[0], width, "x") ?? x;
-    y = transformOriginAxis(tokens[1], height, "y") ?? y;
+    x = transformOriginAxis(tokens[0], safeWidth, "x") ?? x;
+    y = transformOriginAxis(tokens[1], safeHeight, "y") ?? y;
   }
 
-  return { x: x ?? width / 2, y: y ?? height / 2 };
+  return { x: safeNumber(x, safeWidth / 2), y: safeNumber(y, safeHeight / 2) };
 }
 
 export function applyCssTransform(doc: PdfKitDocument, styles: StyleMap | undefined, x: number, y: number, width: number, height: number): void {
   const raw = transformValue(styles);
   if (!raw || raw.toLowerCase() === "none") return;
 
-  const origin = transformOrigin(styles, width, height);
-  doc.translate(x + origin.x, y + origin.y);
+  const safeX = safeNumber(x, 0);
+  const safeY = safeNumber(y, 0);
+  const safeWidth = safeNumber(width, 0);
+  const safeHeight = safeNumber(height, 0);
+  const origin = transformOrigin(styles, safeWidth, safeHeight);
+  doc.translate(safeX + origin.x, safeY + origin.y);
 
   for (const match of raw.matchAll(/([a-z0-9-]+)\(([^)]*)\)/gi)) {
     const fn = (match[1] ?? "").toLowerCase();
@@ -387,15 +415,15 @@ export function applyCssTransform(doc: PdfKitDocument, styles: StyleMap | undefi
       const sy = Number.parseFloat(args[0] ?? "1");
       doc.scale(1, Number.isFinite(sy) ? sy : 1);
     } else if (fn === "translate") {
-      doc.translate(translateLength(args[0], width), translateLength(args[1], height));
+      doc.translate(translateLength(args[0], safeWidth), translateLength(args[1], safeHeight));
     } else if (fn === "translatex") {
-      doc.translate(translateLength(args[0], width), 0);
+      doc.translate(translateLength(args[0], safeWidth), 0);
     } else if (fn === "translatey") {
-      doc.translate(0, translateLength(args[0], height));
+      doc.translate(0, translateLength(args[0], safeHeight));
     }
   }
 
-  doc.translate(-x - origin.x, -y - origin.y);
+  doc.translate(-safeX - origin.x, -safeY - origin.y);
 }
 
 export function drawAssetInBox(
