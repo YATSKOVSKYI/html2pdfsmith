@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.svg" alt="Html2PdfSmith" width="860"/>
+  <img src="https://raw.githubusercontent.com/YATSKOVSKYI/html2pdfsmith/main/.github/assets/html2pdfsmith-banner.png" alt="Html2PdfSmith" width="860"/>
 </p>
 
 <p align="center">

@@ -16,7 +16,6 @@
   },
   "files": [
     "dist",
-    "docs/logo.svg",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
