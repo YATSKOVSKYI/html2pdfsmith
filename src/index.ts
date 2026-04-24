@@ -21,6 +21,7 @@ export type {
   RenderHtmlToPdfResult,
   RenderWarning,
   TableHeaderRepeat,
+  TableCellPagination,
   TableHorizontalPagination,
   TableRowspanPagination,
   TextOverflowWrap,

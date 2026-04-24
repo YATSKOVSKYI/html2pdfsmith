@@ -5,6 +5,7 @@ import {
   type BoxRadius,
   type CellVerticalAlign,
   type ColumnRange,
+  type InlineLayoutLine,
   type LogicalCell,
   type RowRenderGroup,
   type StreamContext,
@@ -30,7 +31,7 @@ import {
 } from "./layout";
 import { drawAssetInBox, drawBackgroundImage, drawBoxShadow, getAsset } from "./assets";
 import { addPage } from "./page";
-import { applyTextTransform, displayInlineSegments, drawInlineText, inlineFont, inlineSize, inlineTextHeight, isNoWrapStyle, isOverflowHidden, lineGapForStyle, wantsEllipsis } from "./inline-text";
+import { applyTextTransform, displayInlineSegments, drawInlineLayoutLines, drawInlineText, inlineFont, inlineLayoutItems, inlineSize, inlineTextHeight, isNoWrapStyle, isOverflowHidden, layoutInlineLines, lineGapForStyle, wantsEllipsis } from "./inline-text";
 
 export function computeColumnWidthsFromStyles(table: ParsedTable, contentWidth: number): number[] {
   const styles = table.columnStyles ?? [];
@@ -407,6 +408,64 @@ export function verticalContentY(y: number, contentHeight: number, itemHeight: n
   return y;
 }
 
+interface PaginatedCellTextLayout {
+  lines: InlineLayoutLine[];
+  lineGap: number;
+  cursor: number;
+  align: "left" | "center" | "right";
+  padding: BoxSpacing;
+}
+
+interface RowCellFragment {
+  lineStart: number;
+  lineEnd: number;
+  lines: InlineLayoutLine[];
+  lineGap: number;
+  textHeight: number;
+  align: "left" | "center" | "right";
+  forceTopAlign: boolean;
+  drawFirstOnlyContent: boolean;
+}
+
+interface RowFragmentRender {
+  height: number;
+  cells: Map<number, RowCellFragment>;
+}
+
+export function minimumRowHeight(ctx: StreamContext, row: ParsedRow): number {
+  const rowHeight = styleBoxHeight(row.styles, ctx.contentBottom - ctx.contentTop);
+  if (row.kind === "section") return Math.max(rowHeight ?? 0, 24 * ctx.paddingScale + 10);
+  const base = row.kind === "header"
+    ? Math.max(32, calculateHeaderCellHeight(ctx.columns) * 0.62)
+    : row.kind === "price"
+      ? 24 + 8 * ctx.paddingScale
+      : 22 + 8 * ctx.paddingScale;
+  return Math.max(base, rowHeight ?? 0);
+}
+
+export function takeLineFragment(lines: InlineLayoutLine[], start: number, maxHeight: number, lineGap: number, forceOne: boolean): { end: number; height: number } {
+  let end = start;
+  let height = 0;
+  while (end < lines.length) {
+    const next = lines[end]!;
+    const nextHeight = height + (end > start ? lineGap : 0) + next.height;
+    if (nextHeight > maxHeight && end > start) break;
+    if (nextHeight > maxHeight && !forceOne) break;
+    height = nextHeight;
+    end += 1;
+    if (nextHeight > maxHeight) break;
+  }
+  return { end, height };
+}
+
+export function cellTextAlign(cell: ParsedCell, row: ParsedRow): "left" | "center" | "right" {
+  return cell.styles["text-align"] === "center" || cell.styles["text-align"] === "right"
+    ? cell.styles["text-align"] as "center" | "right"
+    : row.styles["text-align"] === "center" || row.styles["text-align"] === "right"
+      ? row.styles["text-align"] as "center" | "right"
+      : "left";
+}
+
 export function estimatedCellImageHeight(ctx: StreamContext, cell: ParsedCell, contentWidth: number): number {
   if (!cell.imageSrc) return 0;
   const styles = cell.imageStyles ?? {};
@@ -423,14 +482,8 @@ export function textHeight(ctx: StreamContext, text: string, font: string, size:
 }
 
 export function estimateRowHeight(ctx: StreamContext, row: ParsedRow, capToPage = true): number {
-  const rowHeight = styleBoxHeight(row.styles, ctx.contentBottom - ctx.contentTop);
-  if (row.kind === "section") return Math.max(rowHeight ?? 0, 24 * ctx.paddingScale + 10);
-  let height = row.kind === "header"
-    ? Math.max(32, calculateHeaderCellHeight(ctx.columns) * 0.62)
-    : row.kind === "price"
-      ? 24 + 8 * ctx.paddingScale
-      : 22 + 8 * ctx.paddingScale;
-  if (rowHeight != null) height = Math.max(height, rowHeight);
+  let height = minimumRowHeight(ctx, row);
+  if (row.kind === "section") return height;
 
   let col = 0;
   for (const cell of row.cells) {
@@ -462,8 +515,8 @@ export function estimateRowHeight(ctx: StreamContext, row: ParsedRow, capToPage 
   return capToPage ? Math.min(height, ctx.contentBottom - ctx.contentTop - 8) : height;
 }
 
-export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number): Promise<void> {
-  const height = estimateRowHeight(ctx, row);
+export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number, fragment?: RowFragmentRender): Promise<void> {
+  const height = fragment?.height ?? estimateRowHeight(ctx, row);
   const y = ctx.y;
 
   if (row.kind === "section") {
@@ -533,12 +586,9 @@ export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number)
 
     const font = fontForCell(ctx, cell, row);
     const size = sizeForCell(ctx, cell, row);
-    const align = cell.styles["text-align"] === "center" || cell.styles["text-align"] === "right"
-      ? cell.styles["text-align"] as "center" | "right"
-      : row.styles["text-align"] === "center" || row.styles["text-align"] === "right"
-        ? row.styles["text-align"] as "center" | "right"
-        : "left";
-    const verticalAlign = cellVerticalAlign(cell, row);
+    const align = cellTextAlign(cell, row);
+    const cellFragment = fragment?.cells.get(col);
+    const verticalAlign = cellFragment?.forceTopAlign ? "top" : cellVerticalAlign(cell, row);
     const contentX = x + padding.left;
     const contentY = y + padding.top;
     const contentWidth = Math.max(12, width - padding.left - padding.right);
@@ -546,6 +596,11 @@ export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number)
     const textColor = parseCssColor(cell.styles["color"]) ?? parseCssColor(row.styles["color"]) ?? COLORS.text;
 
     if (cell.richBlocks?.length) {
+      if (fragment && !cellFragment?.drawFirstOnlyContent) {
+        x += width;
+        col += span;
+        continue;
+      }
       const richHeight = estimateRichCellHeight(ctx, cell, contentWidth, font, size);
       const richY = verticalContentY(contentY, contentHeight, richHeight, verticalAlign);
       ctx.doc.save();
@@ -559,7 +614,7 @@ export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number)
     }
 
     if (cell.imageSrc) {
-      const asset = await getAsset(ctx, cell.imageSrc);
+      const asset = !fragment || cellFragment?.drawFirstOnlyContent ? await getAsset(ctx, cell.imageSrc) : null;
       if (asset) {
         const imageStyles: StyleMap = { ...(cell.imageStyles ?? {}) };
         if (!imageStyles["object-position"]) {
@@ -571,16 +626,28 @@ export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number)
       }
     }
 
+    if (fragment && !cellFragment) {
+      x += width;
+      col += span;
+      continue;
+    }
+
     const cellTextStyle = { ...row.styles, ...cell.styles };
     const noWrap = isNoWrapStyle(cellTextStyle);
-    const displayInlines = displayInlineSegments(ctx, cell.text, cell.inlines, font, size, contentWidth, cellTextStyle);
     const lineGap = lineGapForStyle(cellTextStyle, size, 0.18);
-    const textBlockHeight = inlineTextHeight(ctx, cell.text, displayInlines, font, size, contentWidth, lineGap, noWrap);
+    const displayInlines = displayInlineSegments(ctx, cell.text, cell.inlines, font, size, contentWidth, cellTextStyle);
+    const textBlockHeight = cellFragment
+      ? cellFragment.textHeight
+      : inlineTextHeight(ctx, cell.text, displayInlines, font, size, contentWidth, lineGap, noWrap);
     const textY = verticalContentY(contentY, contentHeight, textBlockHeight, verticalAlign);
     ctx.doc.save();
     const contentRadius = isOverflowHidden(cell.styles) || radius > 0 ? Math.max(0, radius - Math.max(padding.left, padding.top)) : 0;
     clipBox(ctx, contentX, contentY, contentWidth, contentHeight, contentRadius);
-    drawInlineText(ctx, cell.text, displayInlines, contentX, textY, contentWidth, font, size, textColor, lineGap, align, noWrap);
+    if (cellFragment) {
+      drawInlineLayoutLines(ctx, cellFragment.lines.slice(cellFragment.lineStart, cellFragment.lineEnd), contentX, textY, contentWidth, cellFragment.align, cellFragment.lineGap);
+    } else {
+      drawInlineText(ctx, cell.text, displayInlines, contentX, textY, contentWidth, font, size, textColor, lineGap, align, noWrap);
+    }
     ctx.doc.restore();
 
     x += width;
@@ -632,7 +699,183 @@ export function freshPageBodyHeight(ctx: StreamContext, headers: ParsedRow[], re
   return Math.max(0, ctx.contentBottom - ctx.contentTop - (repeat ? rowsHeight(ctx, headers) : 0));
 }
 
-export async function drawRowSequentially(ctx: StreamContext, row: ParsedRow, index: number, headers: ParsedRow[], repeat: boolean): Promise<void> {
+export function rowHasUnsupportedCellPaginationSpan(row: ParsedRow): boolean {
+  return row.cells.some((cell) => cell.isSpanPlaceholder || cell.rowspan > 1);
+}
+
+export function canPaginateRowCells(ctx: StreamContext, row: ParsedRow, rawHeight: number, freshBodyHeightValue: number, index: number): boolean {
+  if (ctx.options.table?.cellPagination !== "text") return false;
+  if (row.kind === "section" || rowHasBreakInsideAvoid(row)) return false;
+  if (rawHeight <= freshBodyHeightValue) return false;
+  if (rowHasUnsupportedCellPaginationSpan(row)) {
+    ctx.warnings.add("table_cell_pagination_rowspan_unsupported", `Table row ${index + 1} is taller than a page, but cellPagination=text is only applied to non-rowspan rows; existing rowspan pagination behavior was preserved.`);
+    return false;
+  }
+  return row.cells.some((cell) => !cell.richBlocks?.length && !cell.imageSrc && !cell.isSpanPlaceholder && (cell.text || cell.inlines.length > 0));
+}
+
+export function cellTextLayout(ctx: StreamContext, row: ParsedRow, cell: ParsedCell, col: number): PaginatedCellTextLayout {
+  const span = Math.max(1, cell.colspan);
+  const width = ctx.columnWidths.slice(col, col + span).reduce((sum, value) => sum + value, 0);
+  const padding = cellPadding(ctx, cell);
+  const contentWidth = Math.max(12, width - padding.left - padding.right);
+  const font = fontForCell(ctx, cell, row);
+  const size = sizeForCell(ctx, cell, row);
+  const style = { ...row.styles, ...cell.styles };
+  const noWrap = isNoWrapStyle(style);
+  const lineGap = lineGapForStyle(style, size, 0.18);
+  const textColor = parseCssColor(cell.styles["color"]) ?? parseCssColor(row.styles["color"]) ?? COLORS.text;
+  const displayInlines = displayInlineSegments(ctx, cell.text, cell.inlines, font, size, contentWidth, style);
+  const items = inlineLayoutItems(ctx, displayInlines, font, size, textColor, noWrap);
+  const lines = layoutInlineLines(ctx, items, contentWidth, noWrap);
+  return {
+    lines,
+    lineGap,
+    cursor: 0,
+    align: cellTextAlign(cell, row),
+    padding,
+  };
+}
+
+export function preparePaginatedTextLayouts(ctx: StreamContext, row: ParsedRow): Map<number, PaginatedCellTextLayout> {
+  const layouts = new Map<number, PaginatedCellTextLayout>();
+  let col = 0;
+  for (const cell of row.cells) {
+    const span = Math.max(1, cell.colspan);
+    if (!cell.isSpanPlaceholder && !cell.richBlocks?.length && !cell.imageSrc && (cell.text || cell.inlines.length > 0)) {
+      layouts.set(col, cellTextLayout(ctx, row, cell, col));
+    }
+    col += span;
+  }
+  return layouts;
+}
+
+export function firstOnlyCellContentHeight(ctx: StreamContext, row: ParsedRow, cell: ParsedCell, col: number): number {
+  if (!cell.richBlocks?.length && !cell.imageSrc) return 0;
+  const span = Math.max(1, cell.colspan);
+  const width = ctx.columnWidths.slice(col, col + span).reduce((sum, value) => sum + value, 0);
+  const padding = cellPadding(ctx, cell);
+  const contentWidth = Math.max(12, width - padding.left - padding.right);
+  const font = fontForCell(ctx, cell, row);
+  const size = sizeForCell(ctx, cell, row);
+  const contentHeight = cell.richBlocks?.length
+    ? estimateRichCellHeight(ctx, cell, contentWidth, font, size)
+    : estimatedCellImageHeight(ctx, cell, contentWidth);
+  return contentHeight + padding.top + padding.bottom;
+}
+
+export function rowPaginationDone(layouts: Map<number, PaginatedCellTextLayout>): boolean {
+  for (const layout of layouts.values()) {
+    if (layout.cursor < layout.lines.length) return false;
+  }
+  return true;
+}
+
+export function buildRowFragment(ctx: StreamContext, row: ParsedRow, layouts: Map<number, PaginatedCellTextLayout>, firstFragment: boolean, capacity: number, index: number): RowFragmentRender {
+  const cells = new Map<number, RowCellFragment>();
+  let height = Math.min(capacity, minimumRowHeight(ctx, row));
+  let col = 0;
+
+  for (const cell of row.cells) {
+    const span = Math.max(1, cell.colspan);
+    const layout = layouts.get(col);
+    const padding = cellPadding(ctx, cell);
+
+    if (layout && layout.cursor < layout.lines.length) {
+      const contentCapacity = Math.max(1, capacity - layout.padding.top - layout.padding.bottom);
+      const forceOne = false;
+      const slice = takeLineFragment(layout.lines, layout.cursor, contentCapacity, layout.lineGap, forceOne);
+      if (slice.end === layout.cursor) {
+        ctx.warnings.add("table_cell_pagination_fragment_too_small", `Table row ${index + 1} had no room for the next text line; forcing a clipped continuation fragment.`);
+        const forced = takeLineFragment(layout.lines, layout.cursor, contentCapacity, layout.lineGap, true);
+        cells.set(col, {
+          lineStart: layout.cursor,
+          lineEnd: forced.end,
+          lines: layout.lines,
+          lineGap: layout.lineGap,
+          textHeight: forced.height,
+          align: layout.align,
+          forceTopAlign: true,
+          drawFirstOnlyContent: false,
+        });
+        layout.cursor = forced.end;
+        height = Math.max(height, Math.min(capacity, forced.height + layout.padding.top + layout.padding.bottom));
+      } else {
+        const continues = slice.end < layout.lines.length || layout.cursor > 0;
+        cells.set(col, {
+          lineStart: layout.cursor,
+          lineEnd: slice.end,
+          lines: layout.lines,
+          lineGap: layout.lineGap,
+          textHeight: slice.height,
+          align: layout.align,
+          forceTopAlign: continues,
+          drawFirstOnlyContent: false,
+        });
+        layout.cursor = slice.end;
+        height = Math.max(height, Math.min(capacity, slice.height + layout.padding.top + layout.padding.bottom));
+      }
+    } else if (firstFragment && (cell.richBlocks?.length || cell.imageSrc)) {
+      const contentHeight = firstOnlyCellContentHeight(ctx, row, cell, col);
+      if (contentHeight > capacity) {
+        ctx.warnings.add("table_cell_pagination_rich_content_unsupported", `Table row ${index + 1} contains rich/image cell content taller than the current fragment; cellPagination=text keeps that block whole and clips it as before.`);
+      }
+      cells.set(col, {
+        lineStart: 0,
+        lineEnd: 0,
+        lines: [],
+        lineGap: 0,
+        textHeight: 0,
+        align: cellTextAlign(cell, row),
+        forceTopAlign: false,
+        drawFirstOnlyContent: true,
+      });
+      height = Math.max(height, Math.min(capacity, contentHeight));
+    }
+
+    const cssCellHeight = styleBoxHeight(cell.styles, ctx.contentBottom - ctx.contentTop);
+    if (cssCellHeight != null) height = Math.max(height, Math.min(capacity, cssCellHeight + padding.top + padding.bottom));
+    col += span;
+  }
+
+  return { height: Math.max(1, Math.min(capacity, height)), cells };
+}
+
+export async function drawPaginatedTextRow(ctx: StreamContext, row: ParsedRow, index: number, headers: ParsedRow[], repeat: boolean): Promise<void> {
+  const layouts = preparePaginatedTextLayouts(ctx, row);
+  if (layouts.size === 0) {
+    ctx.warnings.add("table_cell_pagination_no_text", `Table row ${index + 1} is taller than a page, but no plain text cells were available for cellPagination=text.`);
+    await drawRowSequentiallyFallback(ctx, row, index, headers, repeat);
+    return;
+  }
+
+  let firstFragment = true;
+  let guard = 0;
+  while (!rowPaginationDone(layouts) && guard < 1000) {
+    guard += 1;
+    let capacity = ctx.contentBottom - ctx.y;
+    if (capacity < Math.max(10, minimumRowHeight(ctx, row) * 0.5)) {
+      addPage(ctx);
+      await drawRepeatedHeaders(ctx, headers, repeat);
+      capacity = ctx.contentBottom - ctx.y;
+    }
+
+    const fragment = buildRowFragment(ctx, row, layouts, firstFragment, Math.max(1, capacity), index);
+    await drawRow(ctx, row, index, fragment);
+    firstFragment = false;
+
+    if (!rowPaginationDone(layouts)) {
+      addPage(ctx);
+      await drawRepeatedHeaders(ctx, headers, repeat);
+    }
+  }
+
+  if (guard >= 1000) {
+    ctx.warnings.add("table_cell_pagination_guard", `Table row ${index + 1} cell pagination stopped after too many fragments.`);
+  }
+}
+
+export async function drawRowSequentiallyFallback(ctx: StreamContext, row: ParsedRow, index: number, headers: ParsedRow[], repeat: boolean): Promise<void> {
   const rawHeight = estimateRowHeight(ctx, row, false);
   const pageHeight = Math.max(1, ctx.contentBottom - ctx.contentTop);
   if (rawHeight > pageHeight) {
@@ -644,6 +887,16 @@ export async function drawRowSequentially(ctx: StreamContext, row: ParsedRow, in
     await drawRepeatedHeaders(ctx, headers, repeat);
   }
   await drawRow(ctx, row, index);
+}
+
+export async function drawRowSequentially(ctx: StreamContext, row: ParsedRow, index: number, headers: ParsedRow[], repeat: boolean): Promise<void> {
+  const rawHeight = estimateRowHeight(ctx, row, false);
+  const freshBody = freshPageBodyHeight(ctx, headers, repeat);
+  if (canPaginateRowCells(ctx, row, rawHeight, freshBody, index)) {
+    await drawPaginatedTextRow(ctx, row, index, headers, repeat);
+    return;
+  }
+  await drawRowSequentiallyFallback(ctx, row, index, headers, repeat);
 }
 
 export async function drawRowGroups(ctx: StreamContext, rows: ParsedRow[], headers: ParsedRow[], repeat: boolean): Promise<void> {

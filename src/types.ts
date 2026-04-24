@@ -4,6 +4,7 @@ export type WatermarkLayer = "background" | "foreground" | "both";
 export type TableHeaderRepeat = boolean | "auto";
 export type TableRowspanPagination = "avoid" | "split";
 export type TableHorizontalPagination = "none" | "auto" | "always";
+export type TableCellPagination = "off" | "text";
 export type TextOverflowWrap = "normal" | "break-word" | "anywhere";
 
 export interface PdfStylesheetInput {
@@ -120,6 +121,13 @@ export interface PdfTableOptions {
    * Number of left-side source columns repeated in every horizontal slice.
    */
   repeatColumns?: number;
+  /**
+   * Split oversized plain text table cells across page fragments.
+   *
+   * `off` preserves historical row-level pagination. `text` paginates text/inlines
+   * in non-rowspan cells while keeping cell chrome on each continuation fragment.
+   */
+  cellPagination?: TableCellPagination;
 }
 
 export type PdfPageTextAlign = "left" | "center" | "right";

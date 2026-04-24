@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.6 - 2026-04-24
+
+### Added
+
+- Added `table.cellPagination: "off" | "text"` for splitting oversized plain text table cells across vertical page fragments.
+- Added table cell pagination smoke coverage for long automotive comparison-style cells with inline styling and repeated headers.
+
+### Changed
+
+- Oversized non-rowspan table rows can now continue across pages line by line while preserving cell padding, backgrounds, borders, and inline text styles.
+- Split table cell fragments top-align continued content, while cells that fit fully in a fragment keep their requested `vertical-align`.
+- Rich table cell blocks and images remain whole-block content for now; unsupported oversized rich content emits a warning and falls back to existing clipped behavior.
+
+### Notes
+
+- Cell content pagination is intentionally scoped to non-rowspan text/inlines in this release. Rowspan groups keep the existing `rowspanPagination` behavior, and unsupported rowspan split cases emit a warning.
+- Horizontal table pagination continues to work through the existing column-slice renderer.
+
 ## 0.1.5 - 2026-04-23
 
 ### Added

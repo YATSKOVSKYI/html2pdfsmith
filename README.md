@@ -162,6 +162,7 @@ interface RenderHtmlToPdfResult {
 | `table.horizontalPagination` | `"none" \| "auto" \| "always"` | Split wide tables into several horizontal page slices |
 | `table.horizontalPageColumns` | `number` | Maximum non-repeated source columns per horizontal slice |
 | `table.repeatColumns` | `number` | Number of left-side source columns repeated in every horizontal slice |
+| `table.cellPagination` | `"off" \| "text"` | Split oversized plain text table cells across vertical page fragments |
 | `text.overflowWrap` | `"normal" \| "break-word" \| "anywhere"` | Break long unspaced words/tokens instead of clipping them |
 | `page.size` | `"A4" \| "LETTER"` | PDF page size |
 | `page.orientation` | `"portrait" \| "landscape" \| "auto"` | Page orientation |
@@ -475,7 +476,7 @@ Table headers can repeat on page breaks through API options or CSS:
 await renderHtmlToPdfDetailed({
   html,
   tableHeaderRepeat: "auto",
-  table: { rowspanPagination: "avoid" },
+  table: { rowspanPagination: "avoid", cellPagination: "text" },
 });
 ```
 
@@ -484,6 +485,8 @@ thead {
   display: table-header-group;
 }
 ```
+
+`table.cellPagination: "text"` lets an oversized non-rowspan row continue across pages by splitting plain text and inline-styled cell content line by line. Each continuation fragment keeps cell padding, background, borders, and header repetition. Rich blocks and images are kept whole; if they cannot fit in a fragment, the renderer emits a warning and uses the existing clipped fallback.
 
 Long unspaced tokens can be wrapped instead of clipped:
 

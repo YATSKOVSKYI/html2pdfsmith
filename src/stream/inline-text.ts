@@ -365,6 +365,18 @@ export function drawManualInlineText(
 ): void {
   const items = inlineLayoutItems(ctx, inlines, fallbackFont, fallbackSize, fallbackColor, noWrap);
   const lines = layoutInlineLines(ctx, items, width, noWrap);
+  drawInlineLayoutLines(ctx, lines, x, y, width, align);
+}
+
+export function drawInlineLayoutLines(
+  ctx: StreamContext,
+  lines: InlineLayoutLine[],
+  x: number,
+  y: number,
+  width: number,
+  align: "left" | "center" | "right",
+  lineGap = 0,
+): void {
   let cursorY = y;
   for (const line of lines) {
     let cursorX = align === "right" ? x + width - line.width : align === "center" ? x + (width - line.width) / 2 : x;
@@ -387,7 +399,7 @@ export function drawManualInlineText(
         });
       cursorX += item.width;
     }
-    cursorY += line.height;
+    cursorY += line.height + lineGap;
   }
 }
 

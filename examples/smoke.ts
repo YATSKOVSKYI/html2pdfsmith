@@ -175,6 +175,41 @@ if (wideLoaded.getPageCount() !== wideTable.pages || wideTable.pages < 2) {
 }
 console.log({ name: "wide-table-pagination", pages: wideTable.pages, bytes: wideTable.pdf.byteLength, warnings: wideTable.warnings.length });
 
+const cellPagination = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 portrait; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    thead { display: table-header-group; }
+    th, td { border: 1px solid #9ca3af; padding: 7px; vertical-align: middle; }
+    th { background-color: #eef3f8; }
+    .options { vertical-align: top; line-height: 1.35; }
+    .note { color: #2563eb; font-weight: 700; }
+  </style></head><body>
+    <table>
+      <thead><tr><th>Model</th><th>Options</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>AutoCore GT</td>
+          <td class="options">${Array.from({ length: 110 }, (_, i) => `Option ${i + 1}: adaptive package with <span class="note">inline style</span> and extended warranty terms.`).join("<br>")}</td>
+          <td class="options">${Array.from({ length: 80 }, (_, i) => `Comparison note ${i + 1}: market-specific configuration.`).join("<br>")}</td>
+        </tr>
+      </tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  table: { cellPagination: "text" },
+  text: { overflowWrap: "break-word" },
+});
+const cellPaginationLoaded = await PDFDocument.load(cellPagination.pdf);
+if (cellPaginationLoaded.getPageCount() !== cellPagination.pages || cellPagination.pages < 2) {
+  throw new Error("cell pagination: expected a split row across multiple pages");
+}
+if (cellPagination.warnings.some((warning) => warning.code === "table_row_too_tall")) {
+  throw new Error(`cell pagination: row was not paginated before clipping ${JSON.stringify(cellPagination.warnings)}`);
+}
+console.log({ name: "cell-pagination", pages: cellPagination.pages, bytes: cellPagination.pdf.byteLength, warnings: cellPagination.warnings.length });
+
 const alignmentIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="8" y="8" width="48" height="48" rx="10" fill="#2563eb"/><circle cx="32" cy="30" r="11" fill="#fff"/></svg>`)}`;
 const alignment = await renderHtmlToPdfDetailed({
   html: `<!doctype html><html><head><style>
