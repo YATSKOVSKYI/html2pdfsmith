@@ -14,6 +14,7 @@ import {
   cssLengthPt,
   fillBox,
   fontForStyle,
+  safeNumber,
   strokeBox,
 } from "./layout";
 
@@ -206,7 +207,7 @@ export function inlineItem(
   const textValue = applyTextTransform(text, segment.styles);
   const baselineShift = boxed ? 0 : inlineBaselineShift(segment, size);
   ctx.doc.font(font).fontSize(size);
-  const textWidth = ctx.doc.widthOfString(textValue);
+  const textWidth = safeNumber(ctx.doc.widthOfString(textValue), 0);
   const textHeight = ctx.doc.heightOfString(textValue || " ", { width: Math.max(1, textWidth + 2), lineBreak: false });
   const width = textWidth + padding.left + padding.right + border.width * 2;
   const height = Math.max(size * 1.15, textHeight) + padding.top + padding.bottom + border.width * 2;
@@ -240,7 +241,7 @@ export function inlineItem(
 
 export function inlineItemWithText(ctx: StreamContext, item: InlineLayoutItem, text: string): InlineLayoutItem {
   ctx.doc.font(item.font).fontSize(item.size);
-  const textWidth = ctx.doc.widthOfString(text);
+  const textWidth = safeNumber(ctx.doc.widthOfString(text), 0);
   const textHeight = ctx.doc.heightOfString(text || " ", { width: Math.max(1, textWidth + 2), lineBreak: false });
   const width = textWidth + item.padding.left + item.padding.right + item.border.width * 2;
   const height = Math.max(item.size * 1.15, textHeight) + item.padding.top + item.padding.bottom + item.border.width * 2;
@@ -500,7 +501,7 @@ export function drawInlineText(
   const noWrapWidth = noWrap
     ? Math.max(1, segments.reduce((sum, segment) => {
       ctx.doc.font(inlineFont(ctx, segment, fallbackFont)).fontSize(inlineSize(segment, fallbackSize));
-      return sum + ctx.doc.widthOfString(segment.text);
+      return sum + safeNumber(ctx.doc.widthOfString(segment.text), 0);
     }, 0))
     : width;
   const drawX = noWrap && align === "right"

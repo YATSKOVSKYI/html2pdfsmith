@@ -12,6 +12,7 @@ import {
   cssLengthPt,
   fillBox,
   fontForStyle,
+  safeNumber,
   spacingPt,
   strokeBox,
 } from "./layout";
@@ -230,7 +231,7 @@ export function drawChartLegend(ctx: StreamContext, block: Extract<ParsedBlock, 
   const marker = 7;
   const markerGap = 5;
   const itemGap = 18;
-  const itemWidths = labels.map((label) => marker + markerGap + Math.min(72, ctx.doc.widthOfString(label)));
+  const itemWidths = labels.map((label) => marker + markerGap + Math.min(72, safeNumber(ctx.doc.widthOfString(label), 0)));
   const rawTotal = itemWidths.reduce((sum, item) => sum + item, 0) + itemGap * Math.max(0, legendCount - 1);
   const total = Math.min(width, rawTotal);
   let legendX = x + Math.max(0, (width - total) / 2);

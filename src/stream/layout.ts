@@ -9,7 +9,7 @@ import type { PageOrientation, ParsedCell, ParsedDocument, ParsedBlock, ParsedFo
 import { clamp, safeNumber } from "../units";
 import type { WarningSink } from "../warnings";
 
-export { calculateFontScale, calculateHeaderCellHeight, calculatePaddingScale, clamp, determineOrientation, mm } from "../units";
+export { calculateFontScale, calculateHeaderCellHeight, calculatePaddingScale, clamp, determineOrientation, mm, safeNumber } from "../units";
 export type { BoxSpacing, BorderStyle, StyleMap } from "../css";
 
 export type PdfKitDocument = InstanceType<typeof PDFDocument>;

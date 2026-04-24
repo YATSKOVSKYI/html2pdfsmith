@@ -24,6 +24,7 @@ import {
   fillBox,
   fontForStyle,
   maxBoxRadius,
+  safeNumber,
   spacingPt,
   strokeBox,
   strokeCellBorder,
@@ -178,9 +179,9 @@ export function measureCellWidth(ctx: StreamContext, cell: ParsedCell, row: Pars
   const text = plainInlineText(cell.text, cell.inlines, { ...row.styles, ...cell.styles }).replace(/\s+/g, " ").trim();
   ctx.doc.font(font).fontSize(size);
   const lines = text ? text.split(/\n+/) : [""];
-  const preferredText = Math.max(0, ...lines.map((line) => ctx.doc.widthOfString(line)));
+  const preferredText = Math.max(0, ...lines.map((line) => safeNumber(ctx.doc.widthOfString(line), 0)));
   const tokens = text.split(/\s+/).filter(Boolean);
-  const longestToken = Math.max(0, ...tokens.map((token) => ctx.doc.widthOfString(token)));
+  const longestToken = Math.max(0, ...tokens.map((token) => safeNumber(ctx.doc.widthOfString(token), 0)));
   const noWrap = isNoWrapStyle({ ...row.styles, ...cell.styles });
   const ellipsis = wantsEllipsis({ ...row.styles, ...cell.styles });
   const imageWidth = cell.imageSrc
@@ -333,7 +334,7 @@ export function richBlockTextWidth(ctx: StreamContext, block: Extract<ParsedCell
   let width = 0;
   for (const segment of inlines) {
     ctx.doc.font(inlineFont(ctx, segment, font)).fontSize(inlineSize(segment, size));
-    width += ctx.doc.widthOfString(applyTextTransform(segment.text, segment.styles));
+    width += safeNumber(ctx.doc.widthOfString(applyTextTransform(segment.text, segment.styles)), 0);
   }
   return width;
 }
