@@ -552,9 +552,9 @@ export function verticalContentY(y: number, contentHeight: number, itemHeight: n
 }
 
 export function opticalVerticalContentY(y: number, contentHeight: number, metrics: TextBlockMetrics, align: CellVerticalAlign): number {
-  if (align !== "middle" || metrics.lineCount === 0) return verticalContentY(y, contentHeight, metrics.layoutHeight, align);
-  const opticalY = y + Math.max(0, (contentHeight - metrics.visualHeight) / 2) - metrics.baselineOffsetTop;
-  return Math.max(y, Math.min(y + Math.max(0, contentHeight - metrics.layoutHeight), opticalY));
+  if (align !== "middle" || metrics.lineCount === 0) return verticalContentY(y, contentHeight, safeNumber(metrics.layoutHeight, 0), align);
+  const opticalY = y + Math.max(0, (contentHeight - safeNumber(metrics.visualHeight, 0)) / 2) - safeNumber(metrics.baselineOffsetTop, 0);
+  return safeNumber(Math.max(y, Math.min(y + Math.max(0, contentHeight - safeNumber(metrics.layoutHeight, 0)), opticalY)), y);
 }
 
 export function tableTextBlockMetrics(

@@ -1,6 +1,6 @@
 {
   "name": "html2pdfsmith",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Browserless HTML-to-PDF rendering engine for TypeScript, Node.js, and Bun. No Chromium, low-memory streaming renderer, CSS font-family, Google Fonts caching, and local font installs.",
   "type": "module",
   "main": "./dist/index.js",

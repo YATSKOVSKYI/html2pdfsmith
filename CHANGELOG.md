@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.14 - 2026-04-25
+
+### Fixed
+
+- Guarded all three `heightOfString()` call sites (`inlineItem`, `inlineItemWithText`, `inlineTextHeight`) with `safeNumber()` fallback.
+- The critical path is `inlineTextHeight()`, which calls `heightOfString()` with `lineBreak: true`; PDFKit internally calls `widthOfString()` to compute line breaks, and for text in a script whose glyphs are missing from the active font (e.g. Cyrillic text with a Latin-only fallback), `widthOfString()` returns NaN, propagating NaN into the height and then into row-height and Y-coordinate calculations.
+- Hardened `opticalVerticalContentY()` to clamp all NaN metric fields (`layoutHeight`, `visualHeight`, `baselineOffsetTop`) with `safeNumber()` before arithmetic, and wraps the return value with `safeNumber(..., y)` so text always falls back to the top of the content area instead of drawing at y=0 outside the clip region.
+
+### Details
+
+- **Root cause:** `estimateRowHeight()` calls `inlineTextHeight()` for every cell. When the active font lacks glyphs for certain characters (Cyrillic, CJK, etc.), `heightOfString(..., {lineBreak: true})` returns NaN because the internal line-wrapping logic accumulates undefined glyph widths. `Math.max(minimumHeight, NaN + padding)` = NaN, so the entire row height becomes NaN. `ctx.y += NaN` contaminates the Y cursor for all subsequent rows. With the 0.1.13 PDFKit safety layer, NaN coordinates are silently converted to 0 instead of throwing, so rows draw at the very top of the page (outside the clip region) and appear missing or blank rather than causing an outright error.
+- **Impact:** Fixes empty parameter-name column, missing rows, and blank rows in comparison-table PDFs when the primary font lacks glyphs for the document language (most visible with Cyrillic text and a Latin-only fallback font).
+- **Scope:** 4 call sites across 2 modules. No API changes.
+
 ## 0.1.13 - 2026-04-24
 
 ### Fixed

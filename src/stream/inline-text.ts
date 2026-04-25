@@ -208,7 +208,7 @@ export function inlineItem(
   const baselineShift = boxed ? 0 : inlineBaselineShift(segment, size);
   ctx.doc.font(font).fontSize(size);
   const textWidth = safeNumber(ctx.doc.widthOfString(textValue), 0);
-  const textHeight = ctx.doc.heightOfString(textValue || " ", { width: Math.max(1, textWidth + 2), lineBreak: false });
+  const textHeight = safeNumber(ctx.doc.heightOfString(textValue || " ", { width: Math.max(1, textWidth + 2), lineBreak: false }), size * 1.2);
   const width = textWidth + padding.left + padding.right + border.width * 2;
   const height = Math.max(size * 1.15, textHeight) + padding.top + padding.bottom + border.width * 2;
   const visualTop = Math.min(0, baselineShift);
@@ -242,7 +242,7 @@ export function inlineItem(
 export function inlineItemWithText(ctx: StreamContext, item: InlineLayoutItem, text: string): InlineLayoutItem {
   ctx.doc.font(item.font).fontSize(item.size);
   const textWidth = safeNumber(ctx.doc.widthOfString(text), 0);
-  const textHeight = ctx.doc.heightOfString(text || " ", { width: Math.max(1, textWidth + 2), lineBreak: false });
+  const textHeight = safeNumber(ctx.doc.heightOfString(text || " ", { width: Math.max(1, textWidth + 2), lineBreak: false }), item.size * 1.2);
   const width = textWidth + item.padding.left + item.padding.right + item.border.width * 2;
   const height = Math.max(item.size * 1.15, textHeight) + item.padding.top + item.padding.bottom + item.border.width * 2;
   const visualTop = Math.min(0, item.baselineShift);
@@ -475,7 +475,7 @@ export function inlineTextHeight(ctx: StreamContext, text: string, inlines: Pars
   if (needsManualInlineLayout(source)) return inlineManualHeight(ctx, source, fallbackFont, fallbackSize, COLORS.text, width, noWrap);
   const wrappedText = (noWrap ? source : wrappedInlineSegments(ctx, source, fallbackFont, fallbackSize, width)).map((segment) => segment.text).join("");
   ctx.doc.font(fontForStyle(ctx, {}, fallbackFont, wrappedText)).fontSize(maxSize);
-  return ctx.doc.heightOfString(wrappedText || " ", { width: noWrap ? 100000 : width, lineGap, lineBreak: !noWrap });
+  return safeNumber(ctx.doc.heightOfString(wrappedText || " ", { width: noWrap ? 100000 : width, lineGap, lineBreak: !noWrap }), maxSize * 1.2);
 }
 
 export function drawInlineText(
