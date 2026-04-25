@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.17 — 2026-04-25
+
+### Fixed
+
+- **Text in rowspan cells appears slightly below visual centre** — when a small text block sits inside a tall merged cell (e.g. a `rowspan="3"` param-name spanning three sub-rows), the mathematical ink-centre coincides with the geometric cell centre, but the human eye perceives it as sitting below centre. This is the classic typographic optical-centre effect: in a large field of whitespace the brain expects text to be placed above the 50 % mark to *appear* centred.
+
+  **Fix:** `opticalVerticalContentY()` now distributes whitespace at 46 % above / 54 % below instead of 50 / 50. The 4 % upward correction scales with the amount of whitespace, so for tight single-row cells the shift is ≈ 0.1 pt (invisible), while for a three-row merged cell it is ≈ 0.8–1 pt — exactly the amount needed to eliminate the perceived downward drift. Regular (non-merged) cells are unaffected.
+
+---
+
 ## 0.1.16 — 2026-04-25
 
 ### Fixed

@@ -553,7 +553,13 @@ export function verticalContentY(y: number, contentHeight: number, itemHeight: n
 
 export function opticalVerticalContentY(y: number, contentHeight: number, metrics: TextBlockMetrics, align: CellVerticalAlign): number {
   if (align !== "middle" || metrics.lineCount === 0) return verticalContentY(y, contentHeight, safeNumber(metrics.layoutHeight, 0), align);
-  const opticalY = y + Math.max(0, (contentHeight - safeNumber(metrics.visualHeight, 0)) / 2) - safeNumber(metrics.baselineOffsetTop, 0);
+  // Place text at 46 % of the available whitespace from the top instead of the mathematical 50 %.
+  // This compensates for the well-known typographic optical-centre effect: a small text block
+  // centred mathematically in a large field appears to sit below the visual centre.  The 4 %
+  // correction scales with whitespace, so it is negligible for tight single-row cells
+  // (~0.1 pt shift) but visible for tall rowspan cells (~1 pt shift for a 3-row merged area).
+  const ws = Math.max(0, contentHeight - safeNumber(metrics.visualHeight, 0));
+  const opticalY = y + ws * 0.46 - safeNumber(metrics.baselineOffsetTop, 0);
   return safeNumber(Math.max(y, Math.min(y + Math.max(0, contentHeight - safeNumber(metrics.layoutHeight, 0)), opticalY)), y);
 }
 
