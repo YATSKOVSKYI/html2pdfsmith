@@ -476,7 +476,7 @@ export function drawInlineLayoutLines(
 export function inlineTextHeight(ctx: StreamContext, text: string, inlines: ParsedInlineSegment[], fallbackFont: string, fallbackSize: number, width: number, lineGap: number, noWrap = false): number {
   const maxSize = Math.max(fallbackSize, ...inlines.map((segment) => inlineSize(segment, fallbackSize)));
   const source = inlines.length > 0 ? inlines : [{ text, styles: {} }];
-  if (needsManualInlineLayout(source)) return inlineManualHeight(ctx, source, fallbackFont, fallbackSize, COLORS.text, width, noWrap);
+  if (needsManualInlineLayout(source)) return safeNumber(inlineManualHeight(ctx, source, fallbackFont, fallbackSize, COLORS.text, width, noWrap), maxSize * 1.2);
   const wrappedText = (noWrap ? source : wrappedInlineSegments(ctx, source, fallbackFont, fallbackSize, width)).map((segment) => segment.text).join("");
   ctx.doc.font(fontForStyle(ctx, {}, fallbackFont, wrappedText)).fontSize(maxSize);
   return safeNumber(ctx.doc.heightOfString(wrappedText || " ", { width: noWrap ? 100000 : width, lineGap, lineBreak: !noWrap }), maxSize * 1.2);

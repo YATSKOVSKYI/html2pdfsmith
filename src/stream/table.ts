@@ -553,13 +553,16 @@ export function verticalContentY(y: number, contentHeight: number, itemHeight: n
 
 export function opticalVerticalContentY(y: number, contentHeight: number, metrics: TextBlockMetrics, align: CellVerticalAlign): number {
   if (align !== "middle" || metrics.lineCount === 0) return verticalContentY(y, contentHeight, safeNumber(metrics.layoutHeight, 0), align);
-  // Place text at 46 % of the available whitespace from the top instead of the mathematical 50 %.
-  // This compensates for the well-known typographic optical-centre effect: a small text block
-  // centred mathematically in a large field appears to sit below the visual centre.  The 4 %
-  // correction scales with whitespace, so it is negligible for tight single-row cells
-  // (~0.1 pt shift) but visible for tall rowspan cells (~1 pt shift for a 3-row merged area).
   const ws = Math.max(0, contentHeight - safeNumber(metrics.visualHeight, 0));
-  const opticalY = y + ws * 0.46 - safeNumber(metrics.baselineOffsetTop, 0);
+  const visualH = safeNumber(metrics.visualHeight, 0);
+  // Apply a small typographic optical-centre correction: when the text block sits inside a
+  // large field (whitespace > text height, e.g. a rowspan merged cell spanning 3 rows), the
+  // brain perceives mathematically-centred text as sitting below the visual centre.  Shifting
+  // by 4 % of the whitespace (46 % from top instead of 50 %) compensates this effect.
+  // The condition `ws > visualH` limits the correction to genuinely spacious cells so that
+  // tight single-row cells are rendered pixel-identically to before.
+  const opticalBias = ws > visualH ? ws * 0.04 : 0;
+  const opticalY = y + ws / 2 - opticalBias - safeNumber(metrics.baselineOffsetTop, 0);
   return safeNumber(Math.max(y, Math.min(y + Math.max(0, contentHeight - safeNumber(metrics.layoutHeight, 0)), opticalY)), y);
 }
 
@@ -656,15 +659,18 @@ export function flattenRichBlocksForPagination(blocks: ParsedCellBlock[], inheri
 export function minimumRowHeight(ctx: StreamContext, row: ParsedRow): number {
   const rowHeight = styleBoxHeight(row.styles, ctx.contentBottom - ctx.contentTop);
   if (row.kind === "section") return Math.max(rowHeight ?? 0, 24 * ctx.paddingScale + 10);
-  // Scale the minimum with the actual font size and density-adjusted padding rather than using
-  // a fixed constant. The old 22 + 8*paddingScale (~26 pt at 11 columns) was 3× too tall for
-  // dense tables with small fonts (5–6 pt), forcing huge empty space in each row.
+  // naturalLine: one line of text + top/bottom padding, scales with font size and density.
+  // For dense tables with 5–6 pt fonts this gives ~10 pt, which is the correct content-driven
+  // floor (the old constant 22 + 8·paddingScale ≈ 26–30 pt was 3× too tall there).
+  // For normal-density tables the old constant is a comfortable aesthetic floor that we keep via
+  // legacyFloor so that existing layouts are not reflowed.  Dense and compact tables skip it.
   const naturalLine = ctx.baseFontSize * 1.4 + ctx.cellPaddingY * 2;
+  const legacyFloor = tableDensity(ctx) === "normal" ? 22 + 8 * ctx.paddingScale : 0;
   const base = row.kind === "header"
     ? Math.max(naturalLine * 2, calculateHeaderCellHeight(ctx.columns) * 0.62)
     : row.kind === "price"
       ? Math.max(naturalLine, 24 + 8 * ctx.paddingScale)
-      : naturalLine;
+      : Math.max(naturalLine, legacyFloor);
   return Math.max(base, rowHeight ?? 0);
 }
 
@@ -738,11 +744,12 @@ export function estimateRowHeight(ctx: StreamContext, row: ParsedRow, capToPage 
       : 0;
     const imageContentHeight = !cell.richBlocks?.length ? estimatedCellImageHeight(ctx, cell, contentWidth) : 0;
     const cssCellHeight = styleBoxHeight(cell.styles, ctx.contentBottom - ctx.contentTop);
-    height = Math.max(height, richContentHeight + padding.top + padding.bottom, textContentHeight + padding.top + padding.bottom, imageContentHeight + padding.top + padding.bottom, cssCellHeight ?? 0);
+    height = safeNumber(Math.max(height, richContentHeight + padding.top + padding.bottom, textContentHeight + padding.top + padding.bottom, imageContentHeight + padding.top + padding.bottom, cssCellHeight ?? 0), height);
     col += span;
   }
 
-  return capToPage ? Math.min(height, ctx.contentBottom - ctx.contentTop - 8) : height;
+  const safeHeight = safeNumber(height, minimumRowHeight(ctx, row));
+  return capToPage ? Math.min(safeHeight, ctx.contentBottom - ctx.contentTop - 8) : safeHeight;
 }
 
 export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number, fragment?: RowFragmentRender, groupHeight?: number): Promise<void> {
@@ -890,7 +897,8 @@ export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number,
     const textLayout = opticalText ? tableTextBlockMetrics(ctx, displayInlines, font, size, contentWidth, lineGap, noWrap, textColor) : undefined;
     const textBlockHeight = cellFragment
       ? cellFragment.textHeight
-      : textLayout?.metrics.layoutHeight ?? inlineTextHeight(ctx, cell.text, displayInlines, font, size, contentWidth, lineGap, noWrap);
+      : (textLayout && Number.isFinite(textLayout.metrics.layoutHeight) ? textLayout.metrics.layoutHeight : null)
+        ?? inlineTextHeight(ctx, cell.text, displayInlines, font, size, contentWidth, lineGap, noWrap);
     const textY = textLayout
       ? opticalVerticalContentY(contentY, contentHeight, textLayout.metrics, verticalAlign)
       : verticalContentY(contentY, contentHeight, textBlockHeight, verticalAlign);
@@ -910,7 +918,7 @@ export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number,
     col += span;
   }
 
-  ctx.y = y + height;
+  ctx.y = safeNumber(y + height, y + minimumRowHeight(ctx, row));
 }
 
 export function rowHasBreakInsideAvoid(row: ParsedRow): boolean {
@@ -935,7 +943,7 @@ export function groupRowsByRowspan(ctx: StreamContext, rows: ParsedRow[]): RowRe
     }
 
     const groupRows = rows.slice(i, Math.min(rows.length, end + 1));
-    const height = groupRows.reduce((sum, row) => sum + estimateRowHeight(ctx, row, false), 0);
+    const height = groupRows.reduce((sum, row) => sum + safeNumber(estimateRowHeight(ctx, row, false), minimumRowHeight(ctx, row)), 0);
     groups.push({ rows: groupRows, startIndex: i, height, hasRowspan });
     i = end + 1;
   }
@@ -1224,7 +1232,7 @@ export async function drawRowGroups(ctx: StreamContext, rows: ParsedRow[], heade
     for (let offset = 0; offset < group.rows.length; offset++) {
       // Pass the group's total height only for the first row so its rowspan cells
       // draw their background and center their text across the full merged area.
-      const gh = group.hasRowspan && offset === 0 ? group.height : undefined;
+      const gh = group.hasRowspan && offset === 0 && Number.isFinite(group.height) ? group.height : undefined;
       await drawRowSequentially(ctx, group.rows[offset]!, group.startIndex + offset, headers, repeat, gh);
     }
   }

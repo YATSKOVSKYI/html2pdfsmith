@@ -1,12 +1,37 @@
 # Changelog
 
+## 0.1.18 — 2026-04-26
+
+### Fixed
+
+- **`unsupported number: NaN` crash for Cyrillic / Russian text in tables with rowspan cells** — PDF generation for Russian-language content failed on every attempt (4/4 retries) with `Error: unsupported number: NaN` thrown deep inside PDFKit.
+
+  **Root cause (multi-layer):** Five distinct NaN propagation paths converged when rendering Cyrillic text in a table that uses `rowspan`:
+
+  1. **`groupRowsByRowspan` accumulation** — `group.height` is computed as the sum of `estimateRowHeight()` for every row in a rowspan group. If any row's height measurement is non-finite (e.g. due to missing glyph metrics for Cyrillic characters), the entire `group.height` becomes `NaN`.
+  2. **`estimateRowHeight` unguarded `Math.max`** — the per-cell height accumulation uses `Math.max(height, richContentHeight + padding, textContentHeight + padding, …)`. `Math.max(finite, NaN)` returns `NaN`, so a single bad cell contaminates the whole row's height.
+  3. **`inlineTextHeight` unguarded `inlineManualHeight` branch** — when `needsManualInlineLayout()` is true (e.g. inline badges or `vertical-align` styles), the function returned `inlineManualHeight(…)` directly without a `safeNumber` wrapper, bypassing the guard on the `heightOfString` path.
+  4. **`drawRow` unguarded `textLayout.metrics.layoutHeight`** — with `verticalAlignMode: "optical"`, `textBlockHeight` was set to `textLayout.metrics.layoutHeight` via `??` without a finiteness check; a NaN layout height silently passed through.
+  5. **`ctx.y` cursor contamination** — `ctx.y = y + height` at the end of `drawRow` was unguarded; a NaN `height` set the global Y cursor to `NaN`, corrupting all subsequent row positions and eventually crashing PDFKit when it tried to serialize page content with NaN offsets.
+
+  **Fix (five guards added):**
+  - `groupRowsByRowspan`: each `estimateRowHeight()` call in the reduce is wrapped with `safeNumber(…, minimumRowHeight(ctx, row))` so `group.height` is always finite.
+  - `estimateRowHeight`: the `Math.max(…)` accumulation and the final return are both wrapped with `safeNumber`; fallback is `minimumRowHeight(ctx, row)`.
+  - `drawRowGroups`: `group.height` is passed as `groupHeight` only when `Number.isFinite(group.height)` (belt-and-suspenders guard).
+  - `inlineTextHeight`: the `inlineManualHeight` branch now returns `safeNumber(…, maxSize * 1.2)`.
+  - `drawRow`: `textLayout.metrics.layoutHeight` falls back to `inlineTextHeight(…)` when it is not finite; `ctx.y` advance uses `safeNumber(y + height, y + minimumRowHeight(ctx, row))`.
+
+  No API changes. Tables without rowspan cells are unaffected.
+
+---
+
 ## 0.1.17 — 2026-04-25
 
 ### Fixed
 
 - **Text in rowspan cells appears slightly below visual centre** — when a small text block sits inside a tall merged cell (e.g. a `rowspan="3"` param-name spanning three sub-rows), the mathematical ink-centre coincides with the geometric cell centre, but the human eye perceives it as sitting below centre. This is the classic typographic optical-centre effect: in a large field of whitespace the brain expects text to be placed above the 50 % mark to *appear* centred.
 
-  **Fix:** `opticalVerticalContentY()` now distributes whitespace at 46 % above / 54 % below instead of 50 / 50. The 4 % upward correction scales with the amount of whitespace, so for tight single-row cells the shift is ≈ 0.1 pt (invisible), while for a three-row merged cell it is ≈ 0.8–1 pt — exactly the amount needed to eliminate the perceived downward drift. Regular (non-merged) cells are unaffected.
+  **Fix:** `opticalVerticalContentY()` applies a 4 % upward bias — but only when the whitespace exceeds the visual text height (i.e. the cell is genuinely spacious, as in a rowspan). In that case the above-text whitespace becomes 46 % instead of 50 %, shifting text up by `0.04 × whitespace`. For a three-row merged cell (whitespace ≈ 20–25 pt) this is ≈ 0.8–1 pt — exactly the amount needed to eliminate the perceived downward drift. Tight single-row cells (`whitespace ≤ visualHeight`) are untouched and render pixel-identically to 0.1.16. Visual regression baselines updated for `wide-table-pagination` (rowspan background now correctly spans all merged rows, as fixed in 0.1.16).
 
 ---
 
