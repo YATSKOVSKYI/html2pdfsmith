@@ -388,8 +388,12 @@ export function measureInlineLines(ctx: StreamContext, lines: InlineLayoutLine[]
     const ratios = font ? currentFontMetricRatios(ctx, font) : { ascender: 0.76, descender: 0.24, capHeight: 0.7 };
     const glyphHeight = Math.max(maxSize * 0.55, (ratios.capHeight + ratios.descender * 0.55) * maxSize);
     const extra = Math.max(0, line.height - glyphHeight);
-    const topInset = Math.min(maxSize * 0.18, extra * 0.52);
-    const bottomInset = Math.min(maxSize * 0.22, extra - topInset);
+    // Use actual font ascender–capHeight ratio: the space above the cap ink is (ascender − capHeight) × size.
+    // The old heuristic (maxSize * 0.18, extra * 0.52) severely underestimates this for tall-ascender fonts
+    // (e.g. Open Sans: actual 2.13 pt vs 1.08 pt), causing optical centering to place text ~1 pt below center.
+    const aboveCapInset = Math.max(0, (ratios.ascender - ratios.capHeight) * maxSize);
+    const topInset = Math.min(line.height * 0.45, aboveCapInset);
+    const bottomInset = Math.min(maxSize * 0.22, Math.max(0, extra - topInset));
     if (index === 0) firstInsetTop = topInset;
     if (index === lines.length - 1) lastInsetBottom = bottomInset;
   });

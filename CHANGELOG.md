@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.15 - 2026-04-25
+
+### Fixed
+
+- Fixed optical vertical centering (`verticalAlignMode: "optical"`) placing text ~1 pt below the visual center of table cells.
+- Root cause: `measureInlineLines()` estimated `topInset` (the gap from the PDFKit line-box top to the top of the capital-letter ink) using the heuristic `min(maxSize × 0.18, extra × 0.52)`. For fonts with a tall ascender above the cap height (e.g. Open Sans: actual gap = 2.13 pt at 6 pt, heuristic = 1.08 pt), the estimate was ~50% too small. The 1.05 pt underestimate was passed directly to `opticalVerticalContentY()` as `baselineOffsetTop`, which shifted the layout box 1.05 pt too low, making text appear below center.
+- Fix: replace the heuristic with the actual font metric `(ascender − capHeight) × size`, already available from `currentFontMetricRatios()`. This gives an exact, font-specific gap and zeroes the centering error for any font in the ascender/capHeight clamp range.
+
 ## 0.1.14 - 2026-04-25
 
 ### Fixed
