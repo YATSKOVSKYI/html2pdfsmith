@@ -650,11 +650,15 @@ export function flattenRichBlocksForPagination(blocks: ParsedCellBlock[], inheri
 export function minimumRowHeight(ctx: StreamContext, row: ParsedRow): number {
   const rowHeight = styleBoxHeight(row.styles, ctx.contentBottom - ctx.contentTop);
   if (row.kind === "section") return Math.max(rowHeight ?? 0, 24 * ctx.paddingScale + 10);
+  // Scale the minimum with the actual font size and density-adjusted padding rather than using
+  // a fixed constant. The old 22 + 8*paddingScale (~26 pt at 11 columns) was 3× too tall for
+  // dense tables with small fonts (5–6 pt), forcing huge empty space in each row.
+  const naturalLine = ctx.baseFontSize * 1.4 + ctx.cellPaddingY * 2;
   const base = row.kind === "header"
-    ? Math.max(32, calculateHeaderCellHeight(ctx.columns) * 0.62)
+    ? Math.max(naturalLine * 2, calculateHeaderCellHeight(ctx.columns) * 0.62)
     : row.kind === "price"
-      ? 24 + 8 * ctx.paddingScale
-      : 22 + 8 * ctx.paddingScale;
+      ? Math.max(naturalLine, 24 + 8 * ctx.paddingScale)
+      : naturalLine;
   return Math.max(base, rowHeight ?? 0);
 }
 
@@ -735,7 +739,7 @@ export function estimateRowHeight(ctx: StreamContext, row: ParsedRow, capToPage 
   return capToPage ? Math.min(height, ctx.contentBottom - ctx.contentTop - 8) : height;
 }
 
-export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number, fragment?: RowFragmentRender): Promise<void> {
+export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number, fragment?: RowFragmentRender, groupHeight?: number): Promise<void> {
   const height = fragment?.height ?? estimateRowHeight(ctx, row);
   const y = ctx.y;
 
@@ -780,9 +784,23 @@ export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number,
   for (const cell of row.cells) {
     const span = Math.max(1, cell.colspan);
     const width = ctx.columnWidths.slice(col, col + span).reduce((sum, value) => sum + value, 0);
+
+    // Span placeholders: the owning rowspan cell (drawn in the first row of the group) already
+    // fills the entire merged area — skip placeholder cells entirely.
+    if (cell.isSpanPlaceholder) {
+      x += width;
+      col += span;
+      continue;
+    }
+
     const padding = cellPadding(ctx, cell);
     const border = cellBorders(ctx, cell);
-    const radius = borderRadiusPt(cell.styles, width, height);
+    // For rowspan cells in a rowspan group, use the group's total height so the background fill
+    // and text placement span the full merged area. Clamped to the page bottom to prevent bleed.
+    const cellH = (cell.rowspan > 1 && groupHeight != null && !fragment)
+      ? Math.min(groupHeight, Math.max(height, ctx.contentBottom - y))
+      : height;
+    const radius = borderRadiusPt(cell.styles, width, cellH);
     const cellFragment = fragment?.cells.get(col);
     const fill = cell.isDiff
       ? (parseCssColor(cell.styles["background-color"]) ?? COLORS.diffBg)
@@ -794,17 +812,11 @@ export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number,
             ? (parseCssColor(row.styles["background-color"]) ?? COLORS.evenBg)
             : parseCssColor(cell.styles["background-color"]) ?? parseCssColor(row.styles["background-color"]) ?? null;
 
-    if (!cell.isSpanPlaceholder) drawBoxShadow(ctx, cell.styles, x, y, width, height, radius);
-    if (fill) fillBox(ctx, x, y, width, height, fill, radius);
-    if (!cell.isSpanPlaceholder) await drawBackgroundImage(ctx, cell.styles, x, y, width, height, radius);
-    const borderCell = fragment && !cell.isSpanPlaceholder && cell.rowspan > 1 ? { ...cell, rowspan: 1 } : cell;
-    strokeCellBorder(ctx, borderCell, x, y, width, height, border);
-
-    if (cell.isSpanPlaceholder) {
-      x += width;
-      col += span;
-      continue;
-    }
+    drawBoxShadow(ctx, cell.styles, x, y, width, cellH, radius);
+    if (fill) fillBox(ctx, x, y, width, cellH, fill, radius);
+    await drawBackgroundImage(ctx, cell.styles, x, y, width, cellH, radius);
+    const borderCell = fragment && cell.rowspan > 1 ? { ...cell, rowspan: 1 } : cell;
+    strokeCellBorder(ctx, borderCell, x, y, width, cellH, border);
 
     const font = fontForCell(ctx, cell, row);
     const size = sizeForCell(ctx, cell, row);
@@ -813,7 +825,7 @@ export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number,
     const contentX = x + padding.left;
     const contentY = y + padding.top;
     const contentWidth = Math.max(12, width - padding.left - padding.right);
-    const contentHeight = Math.max(8, height - padding.top - padding.bottom);
+    const contentHeight = Math.max(8, cellH - padding.top - padding.bottom);
     const textColor = parseCssColor(cell.styles["color"]) ?? parseCssColor(row.styles["color"]) ?? COLORS.text;
 
     if (cell.richBlocks?.length) {
@@ -1164,7 +1176,7 @@ export async function drawPaginatedTextRow(ctx: StreamContext, row: ParsedRow, i
   }
 }
 
-export async function drawRowSequentiallyFallback(ctx: StreamContext, row: ParsedRow, index: number, headers: ParsedRow[], repeat: boolean): Promise<void> {
+export async function drawRowSequentiallyFallback(ctx: StreamContext, row: ParsedRow, index: number, headers: ParsedRow[], repeat: boolean, groupHeight?: number): Promise<void> {
   const rawHeight = estimateRowHeight(ctx, row, false);
   const pageHeight = Math.max(1, ctx.contentBottom - ctx.contentTop);
   if (rawHeight > pageHeight) {
@@ -1175,17 +1187,17 @@ export async function drawRowSequentiallyFallback(ctx: StreamContext, row: Parse
     addPage(ctx);
     await drawRepeatedHeaders(ctx, headers, repeat);
   }
-  await drawRow(ctx, row, index);
+  await drawRow(ctx, row, index, undefined, groupHeight);
 }
 
-export async function drawRowSequentially(ctx: StreamContext, row: ParsedRow, index: number, headers: ParsedRow[], repeat: boolean): Promise<void> {
+export async function drawRowSequentially(ctx: StreamContext, row: ParsedRow, index: number, headers: ParsedRow[], repeat: boolean, groupHeight?: number): Promise<void> {
   const rawHeight = estimateRowHeight(ctx, row, false);
   const freshBody = freshPageBodyHeight(ctx, headers, repeat);
   if (canPaginateRowCells(ctx, row, rawHeight, freshBody, index)) {
     await drawPaginatedTextRow(ctx, row, index, headers, repeat);
     return;
   }
-  await drawRowSequentiallyFallback(ctx, row, index, headers, repeat);
+  await drawRowSequentiallyFallback(ctx, row, index, headers, repeat, groupHeight);
 }
 
 export async function drawRowGroups(ctx: StreamContext, rows: ParsedRow[], headers: ParsedRow[], repeat: boolean): Promise<void> {
@@ -1204,7 +1216,10 @@ export async function drawRowGroups(ctx: StreamContext, rows: ParsedRow[], heade
     }
 
     for (let offset = 0; offset < group.rows.length; offset++) {
-      await drawRowSequentially(ctx, group.rows[offset]!, group.startIndex + offset, headers, repeat);
+      // Pass the group's total height only for the first row so its rowspan cells
+      // draw their background and center their text across the full merged area.
+      const gh = group.hasRowspan && offset === 0 ? group.height : undefined;
+      await drawRowSequentially(ctx, group.rows[offset]!, group.startIndex + offset, headers, repeat, gh);
     }
   }
 }

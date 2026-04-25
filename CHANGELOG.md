@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.16 — 2026-04-25
+
+### Fixed
+
+- **Rowspan cell text not centered across merged rows** — `drawRow()` was centering text and drawing the background fill using the height of only the *first* row, not the full merged area. For a `rowspan="3"` param-name cell spanning three sub-rows, text was pinned to the first row's height and appeared at the top (or off-center) of the visual merge block.
+
+  **Fix:** added `groupHeight?: number` parameter to `drawRow()`, `drawRowSequentially()`, and `drawRowSequentiallyFallback()`. `drawRowGroups()` now passes `group.height` (the pre-computed sum of all rows in the rowspan group) as the drawing height for the first row of every rowspan group. Cells with `rowspan > 1` use this height for their background fill, border, and `contentHeight`, so text is centered across the full merged area.
+
+- **Span placeholder cells overwriting merged background** — placeholder cells (the ghost entries for rows 1+ of a rowspan group) were processed after the fill and shadow calls, so they could overwrite the owning cell's fill with a different color (e.g. zebra stripe). Moved the `isSpanPlaceholder` early-exit to the top of the cell loop so placeholders are skipped before any drawing.
+
+- **Row height too large for dense tables with small fonts** — `minimumRowHeight()` returned `22 + 8 × paddingScale` (≈ 26 pt for 11-column tables) regardless of font size. At the dense preset with a 5–6 pt font the natural row height is ~9 pt, so the constant floor inflated every row to 3× the content height.
+
+  **Fix:** replaced the constant with `baseFontSize × 1.4 + cellPaddingY × 2` — one line of text plus density-adjusted top/bottom padding. This automatically scales with both font size and the active density preset. Header rows keep a 2× multiple; price rows keep their existing floor.
+
 ## 0.1.15 — 2026-04-25
 
 ### Fixed
