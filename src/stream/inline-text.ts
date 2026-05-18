@@ -368,9 +368,18 @@ export function currentFontMetricRatios(ctx: StreamContext, font: string): { asc
   ctx.doc.font(font);
   const source = (ctx.doc as unknown as PdfKitDocumentWithFontMetrics)._font;
   const units = Math.max(1, Math.abs(source?.unitsPerEm ?? 1000));
-  const ascender = Math.max(0.65, Math.min(1.15, Math.abs(source?.ascender ?? 760) / units));
-  const descender = Math.max(0.12, Math.min(0.45, Math.abs(source?.descender ?? 240) / units));
-  const capHeight = Math.max(0.5, Math.min(0.9, Math.abs(source?.capHeight ?? source?.xHeight ?? 700) / units));
+  const rawAscender = Math.abs(source?.ascender ?? units * 0.76);
+  const ascender = Math.max(0.65, Math.min(1.15, rawAscender / units));
+  const descender = Math.max(0.12, Math.min(0.45, Math.abs(source?.descender ?? units * 0.24) / units));
+  // capHeight and xHeight are absent in many CJK/symbol fonts (field is 0 or undefined).
+  // When neither is meaningfully defined (< 30 % of ascender), fall back to the canonical
+  // cap-to-ascender ratio of 0.72 so that aboveCapInset stays realistic and the optical-
+  // centering formula does not degenerate into a forced top-align via the safety clamp.
+  const rawCap = Math.abs(source?.capHeight ?? 0);
+  const rawX = Math.abs(source?.xHeight ?? 0);
+  const threshold = rawAscender * 0.3;
+  const capRaw = rawCap > threshold ? rawCap : rawX > threshold ? rawX : rawAscender * 0.72;
+  const capHeight = Math.max(0.5, Math.min(0.9, capRaw / units));
   return { ascender, descender, capHeight };
 }
 
@@ -380,20 +389,50 @@ export function measureInlineLines(ctx: StreamContext, lines: InlineLayoutLine[]
     return { visualHeight: 0, layoutHeight: 0, baselineOffsetTop: 0, baselineOffsetBottom: 0, lineCount: 0 };
   }
 
+  // Cache font metrics within this call to avoid repeated ctx.doc.font() mutations
+  // for the same font name across items and lines.
+  const metricsCache = new Map<string, { ascender: number; descender: number; capHeight: number }>();
+  const getRatios = (fontName: string) => {
+    let r = metricsCache.get(fontName);
+    if (!r) { r = currentFontMetricRatios(ctx, fontName); metricsCache.set(fontName, r); }
+    return r;
+  };
+
   let firstInsetTop = 0;
   let lastInsetBottom = 0;
+
   lines.forEach((line, index) => {
-    const maxSize = Math.max(1, ...line.items.map((item) => item.size));
-    const font = line.items.find((item) => item.text.trim())?.font ?? line.items[0]?.font;
-    const ratios = font ? currentFontMetricRatios(ctx, font) : { ascender: 0.76, descender: 0.24, capHeight: 0.7 };
-    const glyphHeight = Math.max(maxSize * 0.55, (ratios.capHeight + ratios.descender * 0.55) * maxSize);
-    const extra = Math.max(0, line.height - glyphHeight);
-    // Use actual font ascender–capHeight ratio: the space above the cap ink is (ascender − capHeight) × size.
-    // The old heuristic (maxSize * 0.18, extra * 0.52) severely underestimates this for tall-ascender fonts
-    // (e.g. Open Sans: actual 2.13 pt vs 1.08 pt), causing optical centering to place text ~1 pt below center.
-    const aboveCapInset = Math.max(0, (ratios.ascender - ratios.capHeight) * maxSize);
-    const topInset = Math.min(line.height * 0.45, aboveCapInset);
-    const bottomInset = Math.min(maxSize * 0.22, Math.max(0, extra - topInset));
+    // Use only non-whitespace items for ink measurement; fall back to all items for empty lines.
+    const contentItems = line.items.filter((item) => item.text.trim().length > 0);
+    const measureItems = contentItems.length > 0 ? contentItems : line.items;
+    if (measureItems.length === 0) return;
+
+    // lineTop accounts for items shifted above the line baseline (superscripts etc.).
+    // For the typical case (no baseline shift) lineTop === 0.
+    const lineTop = Math.min(0, ...line.items.map((item) => item.visualTop));
+
+    // Compute per-item ink boundaries relative to the line layout top (cursorY).
+    // In drawInlineLayoutLines each item is placed at: cursorY − lineTop + item.baselineShift.
+    // PDFKit text is then drawn at: itemY + item.border.width + item.padding.top.
+    // The cap-ink top is (ascender − capHeight) × size below that drawing origin.
+    // The descender-ink bottom is (ascender + descender) × size below that drawing origin.
+    let minInkTop = Infinity;
+    let maxInkBottom = -Infinity;
+
+    for (const item of measureItems) {
+      const r = getRatios(item.font);
+      const drawRelTop = -lineTop + item.baselineShift + item.border.width + item.padding.top;
+      const inkTop = drawRelTop + Math.max(0, (r.ascender - r.capHeight) * item.size);
+      const inkBottom = drawRelTop + (r.ascender + r.descender) * item.size;
+      if (inkTop < minInkTop) minInkTop = inkTop;
+      if (inkBottom > maxInkBottom) maxInkBottom = inkBottom;
+    }
+
+    const maxSize = Math.max(1, ...measureItems.map((item) => item.size));
+    const topInset = Math.min(line.height * 0.45, Math.max(0, minInkTop));
+    // Descenders routinely extend below the PDFKit line-height box; clamp to 0 in that case.
+    const bottomInset = Math.min(maxSize * 0.22, Math.max(0, line.height - maxInkBottom));
+
     if (index === 0) firstInsetTop = topInset;
     if (index === lines.length - 1) lastInsetBottom = bottomInset;
   });
