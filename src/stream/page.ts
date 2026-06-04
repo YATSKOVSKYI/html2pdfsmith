@@ -84,6 +84,9 @@ export function addPage(ctx: StreamContext): void {
   finishPage(ctx);
   ctx.doc.addPage({ size: ctx.pageSize, layout: pageLayout(ctx.orientation), margin: 0 });
   ctx.y = ctx.contentTop;
+  // Reset the head-avoidance band each page; the table renderer re-sets it once
+  // the page's header/price rows are drawn.
+  ctx.watermarkClipTop = ctx.contentTop;
   drawWatermark(ctx, "background");
   drawPageChrome(ctx);
 }

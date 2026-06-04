@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 — 2026-06-04
+
+### Added
+
+- **`watermarkAvoidHeader`** option. When true, the watermark is clipped to start
+  below the table head band (header / price rows) on every page, so document
+  headers, column titles and prices stay clean. Off by default.
+
 ## 0.2.1 — 2026-06-04
 
 ### Fixed

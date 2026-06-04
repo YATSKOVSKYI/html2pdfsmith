@@ -242,6 +242,12 @@ export interface RenderHtmlToPdfOptions {
   watermarkLayout?: WatermarkLayout;
   /** Rotation of the whole watermark layer, in degrees. Defaults per layout. */
   watermarkAngle?: number;
+  /**
+   * When true, the watermark is not drawn over the table head band (header /
+   * price rows) — it is clipped to start below them on each page. Useful to keep
+   * titles, prices and the document header readable.
+   */
+  watermarkAvoidHeader?: boolean;
   /** @deprecated legacy pattern name; mapped to {@link WatermarkLayout}. */
   patternType?: WatermarkPattern | string;
   pageHeader?: PdfPageTemplateOptions;

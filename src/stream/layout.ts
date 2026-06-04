@@ -53,6 +53,8 @@ export interface StreamContext {
   fontFamilies: Map<string, RegisteredFontPair>;
   fontResolver: FontResolver;
   watermarkAsset: LoadedPdfKitAsset | null;
+  /** Y (pt) below which the watermark may be drawn — set to skip the table head. */
+  watermarkClipTop?: number;
   logoAsset: LoadedPdfKitAsset | null;
   qrAsset: LoadedPdfKitAsset | null;
   assetCache: Map<string, Promise<LoadedPdfKitAsset | null>>;

@@ -199,6 +199,13 @@ export function drawWatermark(ctx: StreamContext, layer: "background" | "foregro
   }
 
   ctx.doc.save();
+  // Optionally keep the watermark out of the table head band (titles/prices).
+  if (ctx.options.watermarkAvoidHeader) {
+    const clipTop = safeNumber(ctx.watermarkClipTop, ctx.contentTop);
+    if (clipTop > 0) {
+      ctx.doc.rect(0, clipTop, ctx.pageWidth, Math.max(0, ctx.pageHeight - clipTop)).clip();
+    }
+  }
   ctx.doc.opacity(opacity);
   if (geom.angle) ctx.doc.rotate(geom.angle, { origin: [cx, cy] });
 

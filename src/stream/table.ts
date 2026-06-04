@@ -919,6 +919,11 @@ export async function drawRow(ctx: StreamContext, row: ParsedRow, index: number,
   }
 
   ctx.y = safeNumber(y + height, y + minimumRowHeight(ctx, row));
+
+  // Track the bottom of the table head band so the watermark can avoid it.
+  if (ctx.options.watermarkAvoidHeader && (row.kind === "header" || row.kind === "price")) {
+    ctx.watermarkClipTop = ctx.y;
+  }
 }
 
 export function rowHasBreakInsideAvoid(row: ParsedRow): boolean {
