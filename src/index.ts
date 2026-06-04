@@ -30,6 +30,7 @@ export type {
   TableVerticalAlignMode,
   TextOverflowWrap,
   WatermarkLayer,
+  WatermarkLayout,
   WatermarkPattern,
 } from "./types";
 export type {

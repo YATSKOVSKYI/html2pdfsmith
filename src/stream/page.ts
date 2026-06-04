@@ -1,55 +1,10 @@
 import type { RenderHtmlToPdfOptions } from "../types";
 import { safeNumber } from "../units";
-import { COLORS, type PdfKitDocument, type StreamContext, asOpacity, clamp, mm, pageLayout } from "./layout";
+import { COLORS, type PdfKitDocument, type StreamContext, clamp, mm, pageLayout } from "./layout";
 import { drawAssetSafely } from "./assets";
+import { drawWatermark } from "./watermark";
 
-export function watermarkLayer(options: RenderHtmlToPdfOptions): "background" | "foreground" | "both" {
-  return options.watermarkLayer ?? "background";
-}
-
-export function shouldDrawWatermark(ctx: StreamContext, layer: "background" | "foreground"): boolean {
-  const configured = watermarkLayer(ctx.options);
-  return configured === "both" || configured === layer;
-}
-
-export function drawWatermark(ctx: StreamContext, layer: "background" | "foreground"): void {
-  if (!shouldDrawWatermark(ctx, layer)) return;
-  const text = ctx.options.watermarkText?.trim();
-  const asset = ctx.watermarkAsset;
-  if (!text && !asset) return;
-
-  const opacity = asOpacity(ctx.options.watermarkOpacity, 0.22);
-  const scale = clamp(ctx.options.watermarkScale ?? 50, 1, 100);
-  const step = 105 + scale * 2.7;
-  if (!Number.isFinite(step) || step <= 0) return;
-  const angle = ctx.options.patternType === "honeycomb" ? 30 : 45;
-  const startX = safeNumber(ctx.margin, 0);
-  const startY = safeNumber(ctx.margin, 0);
-  const endX = safeNumber(ctx.pageWidth - ctx.margin, startX);
-  const endY = safeNumber(ctx.pageHeight - ctx.margin, startY);
-
-  ctx.doc.save();
-  ctx.doc.opacity(opacity);
-  for (let y = startY; y < endY; y += step) {
-    for (let x = startX; x < endX; x += step) {
-      ctx.doc.save();
-      ctx.doc.rotate(angle, { origin: [x, y] });
-      if (asset) {
-        const side = 24 + scale * 1.15;
-        drawAssetSafely(ctx, asset, x, y, side, side, 1, "watermark");
-      } else if (text) {
-        const font = ctx.fontResolver.resolve({ fallbackFont: ctx.boldFontName, text, defaultBold: true });
-        ctx.doc.font(font).fontSize(12 + scale * 0.16).fillColor("#555555").text(text, x, y, {
-          width: step * 0.9,
-          lineBreak: false,
-        });
-      }
-      ctx.doc.restore();
-    }
-  }
-  ctx.doc.restore();
-  ctx.doc.opacity(1);
-}
+export { drawWatermark, shouldDrawWatermark, watermarkLayer } from "./watermark";
 
 export function pageTemplateHeight(template: RenderHtmlToPdfOptions["pageHeader"] | RenderHtmlToPdfOptions["pageFooter"]): number {
   if (!template?.text) return 0;

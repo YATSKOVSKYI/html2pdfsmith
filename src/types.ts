@@ -1,5 +1,8 @@
 export type PageOrientation = "portrait" | "landscape";
+/** @deprecated legacy pattern names — use {@link WatermarkLayout}. Kept for back-compat input mapping. */
 export type WatermarkPattern = "auto" | "minimal" | "diagonal" | "triangle" | "corners" | "honeycomb" | "none";
+/** Native tiling arrangements for image/text watermarks. */
+export type WatermarkLayout = "honeycomb" | "grid" | "diagonal" | "single";
 export type WatermarkLayer = "background" | "foreground" | "both";
 export type TableHeaderRepeat = boolean | "auto";
 export type TableRowspanPagination = "avoid" | "split";
@@ -223,9 +226,23 @@ export interface RenderHtmlToPdfOptions {
   watermarkUrl?: string | null;
   userLogoUrl?: string | null;
   logoScale?: number;
+  /**
+   * Combined size+density knob (1..100). Legacy single control.
+   * Prefer the decoupled {@link watermarkLogoScale} + {@link watermarkDensity}.
+   * Used as the fallback for either when they are not provided.
+   */
   watermarkScale?: number;
+  /** Logo/text size, 1..100 (decoupled from spacing). Falls back to {@link watermarkScale}. */
+  watermarkLogoScale?: number;
+  /** Tiling density, 1..100 — higher = tiles packed closer together. Falls back to {@link watermarkScale}. */
+  watermarkDensity?: number;
   watermarkOpacity?: number;
   watermarkLayer?: WatermarkLayer;
+  /** Tiling arrangement. Overrides {@link patternType} mapping when set. */
+  watermarkLayout?: WatermarkLayout;
+  /** Rotation of the whole watermark layer, in degrees. Defaults per layout. */
+  watermarkAngle?: number;
+  /** @deprecated legacy pattern name; mapped to {@link WatermarkLayout}. */
   patternType?: WatermarkPattern | string;
   pageHeader?: PdfPageTemplateOptions;
   pageFooter?: PdfPageTemplateOptions;

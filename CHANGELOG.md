@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.0 — 2026-06-04
+
+### Changed (watermark engine rewrite)
+
+- **Native watermark tiling.** The image/text watermark is now laid out by the
+  renderer itself instead of being treated as a single pre-built sprite. A single
+  logo is tiled across the page — the PNG is never duplicated in the document.
+- **Aspect ratio preserved.** Logos are no longer squashed into a square box;
+  the natural width/height ratio is honoured (`watermarkLogoScale` sets the
+  width, height follows the aspect ratio).
+- **Layouts.** New `watermarkLayout`: `honeycomb` (hex, 30°), `grid` (0°),
+  `diagonal` (brick, 45°), `single` (centered). Legacy `patternType` values
+  (`minimal`→`single`, `triangle`/`corners`→`honeycomb`, etc.) are mapped
+  automatically.
+- **Decoupled controls.** `watermarkLogoScale` (size) and `watermarkDensity`
+  (spacing) are independent; both fall back to the legacy combined
+  `watermarkScale`. Optional `watermarkAngle` overrides the per-layout default.
+- **Whole-layer rotation with over-scan** so the tiled pattern fully covers the
+  page corners — matching CSS `background-repeat: repeat` + `transform: rotate`.
+
+### Added
+
+- `WatermarkLayout` type export; `watermarkLayout`, `watermarkLogoScale`,
+  `watermarkDensity`, `watermarkAngle` options.
+- `examples/watermark-layouts.ts`.
+
 ## 0.1.18 — 2026-04-26
 
 ### Fixed
