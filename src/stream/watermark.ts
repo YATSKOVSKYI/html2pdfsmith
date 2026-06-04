@@ -116,8 +116,36 @@ function logoBox(ctx: StreamContext, asset: LoadedPdfKitAsset): { w: number; h: 
 
 /* ── Drawing ──────────────────────────────────────────────────────── */
 
-function drawImageTile(ctx: StreamContext, asset: LoadedPdfKitAsset, centerX: number, centerY: number, geom: WatermarkGeometry, opacity: number): void {
-  drawAsset(ctx.doc, asset, centerX - geom.logoW / 2, centerY - geom.logoH / 2, geom.logoW, geom.logoH, opacity, "xMidYMid meet");
+/**
+ * Minimal view of a pre-opened PDFKit image. Opening the raster once and
+ * passing the same object to every `doc.image(...)` call makes PDFKit embed a
+ * single XObject and merely reference it per tile — without this the logo PNG
+ * is re-embedded for every tile and the file size scales with tile count.
+ */
+interface OpenedImage { width: number; height: number; obj?: unknown }
+interface DocWithOpenImage {
+  openImage(src: Buffer): OpenedImage;
+  image(src: OpenedImage, x: number, y: number, opts: { width: number; height: number }): unknown;
+}
+
+function drawImageTile(
+  ctx: StreamContext,
+  opened: OpenedImage | null,
+  asset: LoadedPdfKitAsset,
+  centerX: number,
+  centerY: number,
+  geom: WatermarkGeometry,
+  opacity: number,
+): void {
+  const x = centerX - geom.logoW / 2;
+  const y = centerY - geom.logoH / 2;
+  if (opened) {
+    // Raster: reuse the single embedded XObject; opacity is inherited from the layer.
+    (ctx.doc as unknown as DocWithOpenImage).image(opened, x, y, { width: geom.logoW, height: geom.logoH });
+  } else {
+    // SVG (vector): draw per tile; no raster duplication to worry about.
+    drawAsset(ctx.doc, asset, x, y, geom.logoW, geom.logoH, opacity, "xMidYMid meet");
+  }
 }
 
 function drawTextTile(ctx: StreamContext, text: string, font: string, fontSize: number, centerX: number, centerY: number, width: number): void {
@@ -160,12 +188,22 @@ export function drawWatermark(ctx: StreamContext, layer: "background" | "foregro
   const cx = safeNumber(ctx.pageWidth / 2, 0);
   const cy = safeNumber(ctx.pageHeight / 2, 0);
 
+  // Embed a raster logo exactly once, then reference it from every tile.
+  let opened: OpenedImage | null = null;
+  if (asset && (asset.kind === "png" || asset.kind === "jpg")) {
+    try {
+      opened = (ctx.doc as unknown as DocWithOpenImage).openImage(asset.bytes);
+    } catch {
+      opened = null;
+    }
+  }
+
   ctx.doc.save();
   ctx.doc.opacity(opacity);
   if (geom.angle) ctx.doc.rotate(geom.angle, { origin: [cx, cy] });
 
   const draw = (centerX: number, centerY: number): void => {
-    if (asset) drawImageTile(ctx, asset, centerX, centerY, geom, opacity);
+    if (asset) drawImageTile(ctx, opened, asset, centerX, centerY, geom, opacity);
     else if (text) drawTextTile(ctx, text, textFont, textSize, centerX, centerY, box.w);
   };
 

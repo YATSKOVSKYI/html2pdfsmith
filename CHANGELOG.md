@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.1 — 2026-06-04
+
+### Fixed
+
+- **Watermark file-size blow-up.** A raster (PNG/JPG) watermark logo was
+  re-embedded into the PDF for every tile, so file size grew with the watermark
+  density (e.g. a dense honeycomb ballooned a tiny logo to ~240 KB). The logo is
+  now embedded **once** as a single XObject and merely referenced per tile —
+  dense output dropped to ~5 KB in the same test. SVG logos already drew as
+  vectors and are unaffected.
+
 ## 0.2.0 — 2026-06-04
 
 ### Changed (watermark engine rewrite)
