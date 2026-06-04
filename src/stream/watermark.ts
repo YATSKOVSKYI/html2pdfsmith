@@ -121,8 +121,10 @@ function drawImageTile(ctx: StreamContext, asset: LoadedPdfKitAsset, centerX: nu
 }
 
 function drawTextTile(ctx: StreamContext, text: string, font: string, fontSize: number, centerX: number, centerY: number, width: number): void {
+  // No `width`/wrapping option: a wrapped text run lets PDFKit auto-paginate
+  // when the baseline falls outside the page (our over-scan draws past the
+  // page edges), which would silently inflate the page count.
   ctx.doc.font(font).fontSize(fontSize).fillColor("#555555").text(text, centerX - width / 2, centerY - fontSize / 2, {
-    width: width * 1.2,
     lineBreak: false,
   });
 }
