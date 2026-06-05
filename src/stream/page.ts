@@ -11,6 +11,63 @@ export function pageTemplateHeight(template: RenderHtmlToPdfOptions["pageHeader"
   return mm(safeNumber(template.heightMm, 8));
 }
 
+/** Largest header-logo nudge accepted, in mm, on either axis. */
+export const HEADER_LOGO_MAX_OFFSET_MM = 20;
+
+export interface HeaderLogoBoxInput {
+  /** Logo size knob, 1..200 (100 = default). */
+  logoScale?: number | undefined;
+  /** Content (table) width in pt — the band the logo is anchored within. */
+  contentWidthPt: number;
+  /** Header band height in pt. */
+  headerHeightPt: number;
+  /** Page margin in pt — how much room exists left of / above the anchor. */
+  marginPt: number;
+  /** Horizontal nudge from the left anchor, in mm (clamped to ±{@link HEADER_LOGO_MAX_OFFSET_MM}). */
+  offsetXMm?: number | undefined;
+  /** Vertical nudge from the header top, in mm (clamped to ±{@link HEADER_LOGO_MAX_OFFSET_MM}). */
+  offsetYMm?: number | undefined;
+}
+
+export interface HeaderLogoBox {
+  /** Horizontal nudge applied to the left anchor, in pt. */
+  xOffsetPt: number;
+  /** Vertical nudge applied to the top anchor, in pt. */
+  yOffsetPt: number;
+  /** Logo box width in pt (object-fit: contain inside this box). */
+  widthPt: number;
+  /** Logo box height in pt. */
+  heightPt: number;
+}
+
+/**
+ * Single source of truth for the header-logo geometry. The PDF renderer and the
+ * client preview both derive the logo box from this so what users arrange in the
+ * editor matches the generated PDF. The box is anchored at the header's top-left
+ * (`margin`, `top`); offsets nudge it from there. At offset 0 the box matches the
+ * historical output (`width = 60 + logoScale*1.8`, `height = min(42, header-4)`).
+ */
+export function headerLogoBox(input: HeaderLogoBoxInput): HeaderLogoBox {
+  const logoScale = clamp(safeNumber(input.logoScale, 100), 1, 200);
+  const widthPt = 60 + logoScale * 1.8;
+  const heightPt = Math.min(42, input.headerHeightPt - 4);
+
+  const maxOff = HEADER_LOGO_MAX_OFFSET_MM;
+  const offXMm = clamp(safeNumber(input.offsetXMm, 0), -maxOff, maxOff);
+  const offYMm = clamp(safeNumber(input.offsetYMm, 0), -maxOff, maxOff);
+
+  // Allow nudging in both directions while keeping the box on the physical page.
+  // Anchor sits at (margin, top). Leftward/upward room is the page margin; rightward
+  // room runs to the page's right margin; downward the logo may extend past the
+  // header band into the content (an explicit user choice), so only the ±20mm cap
+  // bounds it there.
+  const marginPt = Math.max(0, safeNumber(input.marginPt, 0));
+  const xOffsetPt = clamp(mm(offXMm), -marginPt, Math.max(0, input.contentWidthPt - widthPt + marginPt));
+  const yOffsetPt = Math.max(mm(offYMm), -marginPt);
+
+  return { xOffsetPt, yOffsetPt, widthPt, heightPt };
+}
+
 export function pageNumberSettings(options: RenderHtmlToPdfOptions): { enabled: boolean; format: string; align: "left" | "center" | "right"; fontSize: number; color: string } {
   if (!options.pageNumbers) {
     return { enabled: false, format: "", align: "center", fontSize: 8, color: COLORS.text };
@@ -109,8 +166,15 @@ export function drawHeader(ctx: StreamContext): void {
   const top = safeNumber(ctx.y, ctx.contentTop);
 
   if (ctx.logoAsset) {
-    const logoScale = clamp(ctx.options.logoScale ?? 100, 1, 200);
-    drawAssetSafely(ctx, ctx.logoAsset, ctx.margin, top, 60 + logoScale * 1.8, Math.min(42, headerHeight - 4), 1, "logo");
+    const box = headerLogoBox({
+      logoScale: ctx.options.logoScale,
+      contentWidthPt: ctx.tableWidth,
+      headerHeightPt: headerHeight,
+      marginPt: ctx.margin,
+      offsetXMm: ctx.options.logoOffsetXMm,
+      offsetYMm: ctx.options.logoOffsetYMm,
+    });
+    drawAssetSafely(ctx, ctx.logoAsset, ctx.margin + box.xOffsetPt, top + box.yOffsetPt, box.widthPt, box.heightPt, 1, "logo");
   } else {
     const brand = ctx.parsed.brandText || "DOCUMENT";
     const brandFont = ctx.fontResolver.resolve({ fallbackFont: ctx.boldFontName, text: brand, defaultBold: true });

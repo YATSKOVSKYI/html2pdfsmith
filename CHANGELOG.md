@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.3 — 2026-06-05
+
+### Added
+
+- **Header logo positioning.** New `logoOffsetXMm` / `logoOffsetYMm` options nudge
+  the header logo from its top-left anchor, in millimetres (clamped to ±20mm and to
+  the physical page bounds). At offset 0 the output is unchanged.
+- **`headerLogoBox()`** is now exported (with `HeaderLogoBox` / `HeaderLogoBoxInput`
+  types and `HEADER_LOGO_MAX_OFFSET_MM`). It is the single source of truth for the
+  header-logo geometry (size + offset), so a host app can mirror it in a live preview
+  and have it match the generated PDF exactly.
+
 ## 0.2.2 — 2026-06-04
 
 ### Added

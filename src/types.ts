@@ -226,6 +226,10 @@ export interface RenderHtmlToPdfOptions {
   watermarkUrl?: string | null;
   userLogoUrl?: string | null;
   logoScale?: number;
+  /** Horizontal nudge of the header logo from its left anchor, in mm (clamped to ±20). */
+  logoOffsetXMm?: number;
+  /** Vertical nudge of the header logo from the header top, in mm (clamped to ±20). */
+  logoOffsetYMm?: number;
   /**
    * Combined size+density knob (1..100). Legacy single control.
    * Prefer the decoupled {@link watermarkLogoScale} + {@link watermarkDensity}.

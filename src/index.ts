@@ -70,5 +70,7 @@ export {
   loadFontManifest,
 } from "./font-manifest";
 export { resolveFontPaths } from "./assets";
+export { headerLogoBox, HEADER_LOGO_MAX_OFFSET_MM } from "./stream/page";
+export type { HeaderLogoBox, HeaderLogoBoxInput } from "./stream/page";
 export { protectPdfWithQpdf } from "./protect";
 export * from "./errors";
