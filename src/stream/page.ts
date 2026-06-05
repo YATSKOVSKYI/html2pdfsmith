@@ -1,7 +1,7 @@
 import type { RenderHtmlToPdfOptions } from "../types";
 import { safeNumber } from "../units";
 import { COLORS, type PdfKitDocument, type StreamContext, clamp, mm, pageLayout } from "./layout";
-import { drawAssetSafely } from "./assets";
+import { drawAssetInBox, drawAssetSafely } from "./assets";
 import { drawWatermark } from "./watermark";
 
 export { drawWatermark, shouldDrawWatermark, watermarkLayer } from "./watermark";
@@ -180,7 +180,9 @@ export function drawHeader(ctx: StreamContext): void {
       offsetXMm: ctx.options.logoOffsetXMm,
       offsetYMm: ctx.options.logoOffsetYMm,
     });
-    drawAssetSafely(ctx, ctx.logoAsset, ctx.margin + box.xOffsetPt, top + box.yOffsetPt, box.widthPt, box.heightPt, 1, "logo");
+    // Left-align the logo within its box (the box width is a generous cap, so
+    // centering would push the logo right). This matches the client preview.
+    drawAssetInBox(ctx, ctx.logoAsset, ctx.margin + box.xOffsetPt, top + box.yOffsetPt, box.widthPt, box.heightPt, { "object-position": "left center" }, 1, "logo");
   } else {
     const brand = ctx.parsed.brandText || "DOCUMENT";
     const brandFont = ctx.fontResolver.resolve({ fallbackFont: ctx.boldFontName, text: brand, defaultBold: true });

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.5 — 2026-06-05
+
+### Fixed
+
+- **Header logo now left-aligns within its box.** The logo was centered inside a
+  generous-width box, so a height-limited logo drifted right by half the empty
+  space (often ~15–20mm) versus a left-anchored preview. It now hugs the left edge
+  (`object-position: left center`), matching the anchor a host preview would use.
+
 ## 0.2.4 — 2026-06-05
 
 ### Fixed
