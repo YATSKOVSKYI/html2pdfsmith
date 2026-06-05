@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.4 — 2026-06-05
+
+### Fixed
+
+- **Header logo size now responds to `logoScale`.** The logo box used a fixed
+  height (`min(42, header-4)`), so with `object-fit: contain` a height-limited logo
+  did not visibly grow/shrink as `logoScale` changed. The box height is now linear
+  in `logoScale` (100% ≈ 40pt, clamped 12..84pt) and width is a generous cap, so the
+  knob actually resizes the logo. `headerLogoBox()` returns the new geometry.
+
 ## 0.2.3 — 2026-06-05
 
 ### Added

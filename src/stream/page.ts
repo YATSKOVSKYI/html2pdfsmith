@@ -49,8 +49,14 @@ export interface HeaderLogoBox {
  */
 export function headerLogoBox(input: HeaderLogoBoxInput): HeaderLogoBox {
   const logoScale = clamp(safeNumber(input.logoScale, 100), 1, 200);
-  const widthPt = 60 + logoScale * 1.8;
-  const heightPt = Math.min(42, input.headerHeightPt - 4);
+  // Height is the binding dimension and scales linearly with logoScale, so the
+  // knob actually resizes the logo (with `object-fit: contain` a fixed-height box
+  // would leave height-limited logos unchanged). 100% ≈ 40pt; clamped 12..84pt.
+  // Width is a generous cap (so wide logos are not cropped) but is not the usual
+  // constraint, so the logo tracks the box height.
+  const k = logoScale / 100;
+  const heightPt = clamp(40 * k, 12, 84);
+  const widthPt = Math.min(Math.max(0, input.contentWidthPt) * 0.6, heightPt * 8);
 
   const maxOff = HEADER_LOGO_MAX_OFFSET_MM;
   const offXMm = clamp(safeNumber(input.offsetXMm, 0), -maxOff, maxOff);
