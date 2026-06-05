@@ -102,7 +102,7 @@ async function createStreamContext(options: RenderHtmlToPdfOptions, parsed: Pars
     }, fonts.families, fonts.fallbackFamilies),
     watermarkAsset: await loadPdfKitAsset(options.watermarkUrl, warnings, options),
     logoAsset: await loadPdfKitAsset(options.userLogoUrl, warnings, options),
-    qrAsset: await loadPdfKitAsset(parsed.contactQrSrc, warnings, options),
+    qrAsset: await loadPdfKitAsset(options.headerContacts?.qr?.src ?? parsed.contactQrSrc, warnings, options),
     assetCache: new Map(),
     currentTableStyle: tableStyle({}),
   };

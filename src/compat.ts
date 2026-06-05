@@ -16,6 +16,7 @@ export interface ConvertHtmlToPdfLiteOptions {
   logoScale?: number;
   logoOffsetXMm?: number;
   logoOffsetYMm?: number;
+  headerContacts?: RenderHtmlToPdfOptions["headerContacts"];
   watermarkScale?: number;
   watermarkOpacity?: number;
   patternType?: string;
@@ -44,6 +45,7 @@ export async function convertHtmlToPdfDetailed(
   if (options.logoScale !== undefined) renderOptions.logoScale = options.logoScale;
   if (options.logoOffsetXMm !== undefined) renderOptions.logoOffsetXMm = options.logoOffsetXMm;
   if (options.logoOffsetYMm !== undefined) renderOptions.logoOffsetYMm = options.logoOffsetYMm;
+  if (options.headerContacts !== undefined) renderOptions.headerContacts = options.headerContacts;
   if (options.watermarkScale !== undefined) renderOptions.watermarkScale = options.watermarkScale;
   if (options.watermarkOpacity !== undefined) renderOptions.watermarkOpacity = options.watermarkOpacity;
   if (options.patternType !== undefined) renderOptions.patternType = options.patternType;

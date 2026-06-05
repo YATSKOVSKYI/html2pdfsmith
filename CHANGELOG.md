@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.6 — 2026-06-05
+
+### Added
+
+- **Native header contact block** via the new `headerContacts` option. Renders
+  icon + text rows (`phone`, `email`, `globe`) and an optional QR with a centered
+  social badge (`telegram`, `wechat`, `whatsapp`, `instagram`, `facebook`,
+  `youtube`, `viber`). Built-in brand-coloured glyphs are drawn natively, so the
+  PDF matches a rich editor preview — previously contacts parsed from HTML were
+  flattened to plain text and the QR badge was lost. Exports `HeaderContacts`,
+  `HeaderContactItem`, `HeaderContactsQr`, `HeaderContactIcon`.
+
 ## 0.2.5 — 2026-06-05
 
 ### Fixed

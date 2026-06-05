@@ -2,6 +2,7 @@ import type { RenderHtmlToPdfOptions } from "../types";
 import { safeNumber } from "../units";
 import { COLORS, type PdfKitDocument, type StreamContext, clamp, mm, pageLayout } from "./layout";
 import { drawAssetInBox, drawAssetSafely } from "./assets";
+import { drawHeaderContacts } from "./contacts";
 import { drawWatermark } from "./watermark";
 
 export { drawWatermark, shouldDrawWatermark, watermarkLayer } from "./watermark";
@@ -167,7 +168,9 @@ export function fitFontSize(doc: PdfKitDocument, fontName: string, text: string,
 
 export function drawHeader(ctx: StreamContext): void {
   if (ctx.options.hideHeader) return;
-  const hasContacts = ctx.parsed.contactItems.length > 0 || !!ctx.qrAsset;
+  const structuredContacts = ctx.options.headerContacts;
+  const hasStructured = !!structuredContacts && ((structuredContacts.items?.length ?? 0) > 0 || !!structuredContacts.qr);
+  const hasContacts = hasStructured || ctx.parsed.contactItems.length > 0 || !!ctx.qrAsset;
   const headerHeight = hasContacts ? mm(31) : mm(18);
   const top = safeNumber(ctx.y, ctx.contentTop);
 
@@ -191,6 +194,14 @@ export function drawHeader(ctx: StreamContext): void {
       width: ctx.tableWidth * 0.45,
       lineBreak: false,
     });
+  }
+
+  // Structured contacts (icons + QR badge) take precedence over text parsed from
+  // the HTML `.contact-card`.
+  if (hasStructured) {
+    drawHeaderContacts(ctx, top, headerHeight);
+    ctx.y += headerHeight + 8;
+    return;
   }
 
   let right = ctx.pageWidth - ctx.margin;

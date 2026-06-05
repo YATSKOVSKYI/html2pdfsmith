@@ -209,6 +209,39 @@ export interface RenderWarning {
   message: string;
 }
 
+/** Built-in glyph for a contact row icon or a QR social badge. */
+export type HeaderContactIcon =
+  | "phone"
+  | "email"
+  | "globe"
+  | "telegram"
+  | "wechat"
+  | "whatsapp"
+  | "instagram"
+  | "facebook"
+  | "youtube"
+  | "viber";
+
+export interface HeaderContactItem {
+  /** Built-in icon drawn before the text. Omit for no icon. */
+  icon?: HeaderContactIcon;
+  text: string;
+  /** Optional link target (rendered as a clickable annotation). */
+  href?: string;
+}
+
+export interface HeaderContactsQr {
+  /** Image source for the QR (data URI, http(s), or file per resource policy). */
+  src: string;
+  /** Social glyph drawn in a white disc at the QR centre. */
+  badge?: HeaderContactIcon | null;
+}
+
+export interface HeaderContacts {
+  items?: HeaderContactItem[];
+  qr?: HeaderContactsQr | null;
+}
+
 export interface RenderHtmlToPdfOptions {
   html: string;
   baseUrl?: string;
@@ -230,6 +263,12 @@ export interface RenderHtmlToPdfOptions {
   logoOffsetXMm?: number;
   /** Vertical nudge of the header logo from the header top, in mm (clamped to ±20). */
   logoOffsetYMm?: number;
+  /**
+   * Structured header contact block — rendered natively (icon + text rows, plus an
+   * optional QR with a centered social badge). Takes precedence over contacts parsed
+   * from the HTML `.contact-card`. The QR `src` is loaded like any other image asset.
+   */
+  headerContacts?: HeaderContacts | null;
   /**
    * Combined size+density knob (1..100). Legacy single control.
    * Prefer the decoupled {@link watermarkLogoScale} + {@link watermarkDensity}.
