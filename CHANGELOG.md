@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.7 — 2026-06-05
+
+### Added
+
+- **`linkedin` and `x` contact glyphs** for `headerContacts` icons / QR badges
+  (brand-coloured), alongside the existing set.
+
 ## 0.2.6 — 2026-06-05
 
 ### Added

@@ -220,7 +220,9 @@ export type HeaderContactIcon =
   | "instagram"
   | "facebook"
   | "youtube"
-  | "viber";
+  | "viber"
+  | "linkedin"
+  | "x";
 
 export interface HeaderContactItem {
   /** Built-in icon drawn before the text. Omit for no icon. */
