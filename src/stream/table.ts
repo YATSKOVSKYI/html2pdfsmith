@@ -1421,6 +1421,85 @@ export function sliceTableByColumns(table: ParsedTable, columns: number[]): { ta
   return { table: slicedTable, splitBodyColspan };
 }
 
+function drawTableCornerMask(
+  ctx: StreamContext,
+  x: number,
+  y: number,
+  width: number,
+  radius: number,
+  edge: "top" | "bottom",
+  color = "#ffffff",
+): void {
+  const r = Math.max(0, Math.min(radius, width / 2));
+  if (r <= 0) return;
+
+  ctx.doc.save();
+  ctx.doc.fillColor(color);
+  if (edge === "top") {
+    ctx.doc
+      .moveTo(x, y)
+      .lineTo(x + r, y)
+      .quadraticCurveTo(x, y, x, y + r)
+      .closePath()
+      .fill();
+    ctx.doc
+      .moveTo(x + width - r, y)
+      .lineTo(x + width, y)
+      .lineTo(x + width, y + r)
+      .quadraticCurveTo(x + width, y, x + width - r, y)
+      .closePath()
+      .fill();
+  } else {
+    ctx.doc
+      .moveTo(x, y - r)
+      .lineTo(x, y)
+      .lineTo(x + r, y)
+      .quadraticCurveTo(x, y, x, y - r)
+      .closePath()
+      .fill();
+    ctx.doc
+      .moveTo(x + width, y - r)
+      .lineTo(x + width, y)
+      .lineTo(x + width - r, y)
+      .quadraticCurveTo(x + width, y, x + width, y - r)
+      .closePath()
+      .fill();
+  }
+  ctx.doc.restore();
+}
+
+function strokeTableRoundedEdge(
+  ctx: StreamContext,
+  x: number,
+  y: number,
+  width: number,
+  radius: number,
+  edge: "top" | "bottom",
+  border: BorderStyle,
+): void {
+  const r = Math.max(0, Math.min(radius, width / 2));
+  if (r <= 0 || border.width <= 0 || border.style === "none") return;
+
+  ctx.doc.save();
+  ctx.doc.strokeColor(border.color ?? COLORS.border).lineWidth(border.width);
+  if (edge === "top") {
+    ctx.doc
+      .moveTo(x, y + r)
+      .quadraticCurveTo(x, y, x + r, y)
+      .lineTo(x + width - r, y)
+      .quadraticCurveTo(x + width, y, x + width, y + r)
+      .stroke();
+  } else {
+    ctx.doc
+      .moveTo(x, y - r)
+      .quadraticCurveTo(x, y, x + r, y)
+      .lineTo(x + width - r, y)
+      .quadraticCurveTo(x + width, y, x + width, y - r)
+      .stroke();
+  }
+  ctx.doc.restore();
+}
+
 export async function drawSingleTableBlock(ctx: StreamContext, table: ParsedTable, style: StyleMap, addTrailingGap = true): Promise<void> {
   const previousWidths = ctx.columnWidths;
   const previousColumns = ctx.columns;
@@ -1434,6 +1513,8 @@ export async function drawSingleTableBlock(ctx: StreamContext, table: ParsedTabl
     ctx.tableWidth = clamp(width, Math.min(previousTableWidth, 120), previousTableWidth);
     ctx.currentTableStyle = tableStyle(style);
     ctx.columnWidths = computeTableColumnWidths(ctx, table, ctx.tableWidth, ctx.currentTableStyle);
+    const tableRadius = borderRadiusPt(style, ctx.tableWidth, ctx.contentBottom - ctx.contentTop);
+    const tableBorder = borderPxToPt(parseBorderStyle(style, { width: tableRadius > 0 ? 1 : 0, color: COLORS.border, style: "solid" }));
     const repeat = shouldRepeatTableHeaders(ctx, table);
     const groups = groupRowsByRowspan(ctx, table.bodyRows);
     const firstGroup = groups[0];
@@ -1441,12 +1522,24 @@ export async function drawSingleTableBlock(ctx: StreamContext, table: ParsedTabl
     if (firstGroup && firstGroup.height <= freshPageBodyHeight(ctx, table.headRows, repeat) && ctx.y + headerHeight + firstGroup.height > ctx.contentBottom) {
       addPage(ctx);
     }
+    let tableTopY = ctx.y;
     for (const row of table.headRows) {
       const height = estimateRowHeight(ctx, row);
-      if (ctx.y + height > ctx.contentBottom) addPage(ctx);
+      if (ctx.y + height > ctx.contentBottom) {
+        addPage(ctx);
+        tableTopY = ctx.y;
+      }
       await drawRow(ctx, row, -1);
     }
+    if (tableRadius > 0) {
+      drawTableCornerMask(ctx, ctx.margin, tableTopY, ctx.tableWidth, tableRadius, "top");
+      strokeTableRoundedEdge(ctx, ctx.margin, tableTopY, ctx.tableWidth, tableRadius, "top", tableBorder);
+    }
     await drawRowGroups(ctx, table.bodyRows, table.headRows, repeat);
+    if (tableRadius > 0) {
+      drawTableCornerMask(ctx, ctx.margin, ctx.y, ctx.tableWidth, tableRadius, "bottom");
+      strokeTableRoundedEdge(ctx, ctx.margin, ctx.y, ctx.tableWidth, tableRadius, "bottom", tableBorder);
+    }
     if (addTrailingGap) ctx.y += 8;
   } finally {
     ctx.columns = previousColumns;
@@ -1472,4 +1565,3 @@ export async function drawTableBlock(ctx: StreamContext, block: Extract<ParsedBl
     ctx.warnings.add("table_colspan_horizontal_split", "A body cell with colspan crossed a horizontal table slice boundary; its visible portion was repeated/clipped per slice.");
   }
 }
-

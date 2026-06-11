@@ -23,6 +23,7 @@
   "scripts": {
     "build": "tsup src/index.ts src/cli.ts --format esm --dts --clean",
     "typecheck": "tsc --noEmit",
+    "prepare": "npm run build",
     "prepack": "bun run build",
     "example": "bun run examples/simple-table.ts",
     "example:css-table": "bun run examples/css-table.ts",
