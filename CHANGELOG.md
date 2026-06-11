@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.8 — 2026-06-12
+
+### Added
+
+- **Table border-radius rendering as an outer contour** — Render table border radius as an outer contour using corner masks and rounded edge strokes.
+
 ## 0.2.7 — 2026-06-05
 
 ### Added
