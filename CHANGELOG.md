@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.9 - 2026-07-09
+
+### Added
+
+- **PDF metadata title option.** `RenderHtmlToPdfOptions.title` now sets the PDF
+  document title directly, with the existing fallback to `recordId` and then
+  `"HTML PDF"`.
+
 ## 0.2.8 — 2026-06-12
 
 ### Added

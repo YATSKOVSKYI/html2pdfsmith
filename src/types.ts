@@ -250,6 +250,8 @@ export interface RenderHtmlToPdfOptions {
   stylesheets?: PdfStylesheet[];
   resourcePolicy?: PdfResourcePolicy;
   recordId?: string;
+  /** PDF metadata title. Falls back to `recordId`, then "HTML PDF". */
+  title?: string;
   page?: PdfPageOptions;
   text?: PdfTextOptions;
   table?: PdfTableOptions;

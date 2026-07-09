@@ -156,6 +156,7 @@ interface RenderHtmlToPdfResult {
 | `baseUrl` | `string` | Base URL or directory for relative assets such as CSS, images, SVGs, and fonts |
 | `stylesheets` | `(string \| { href, content })[]` | Extra CSS files, URLs, or inline stylesheet content |
 | `resourcePolicy` | `object` | Resource loading guardrails: HTTP/file/data access, timeout, max image/CSS/font bytes |
+| `title` | `string` | PDF metadata title; falls back to `recordId`, then `"HTML PDF"` |
 | `repeatHeaders` | `boolean` | Repeat table headers on page breaks |
 | `tableHeaderRepeat` | `boolean \| "auto"` | Repeat table headers explicitly, or automatically for tables with headers |
 | `table.rowspanPagination` | `"avoid" \| "split"` | Keep rowspan-connected rows together when they fit on a fresh page |

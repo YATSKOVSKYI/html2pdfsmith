@@ -5359,7 +5359,7 @@ async function createStreamContext(options, parsed, warnings) {
     bufferPages: false,
     info: {
       Producer: "Html2PdfSmith",
-      Title: options.recordId ? `HTML PDF ${options.recordId}` : "HTML PDF"
+      Title: options.title ?? (options.recordId ? `HTML PDF ${options.recordId}` : "HTML PDF")
     }
   });
   const done = chunksToBuffer(doc);

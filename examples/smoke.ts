@@ -69,6 +69,16 @@ if (baseUrlResources.warnings.length > 1) {
 }
 console.log({ name: "base-url-resources", pages: baseUrlResources.pages, bytes: baseUrlResources.pdf.byteLength, warnings: baseUrlResources.warnings.length });
 
+const titled = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><body><h1>Custom title</h1></body></html>`,
+  title: "Invoice #12345",
+});
+const titledLoaded = await PDFDocument.load(titled.pdf);
+if (titledLoaded.getTitle() !== "Invoice #12345") {
+  throw new Error(`pdf title: expected custom title, got ${JSON.stringify(titledLoaded.getTitle())}`);
+}
+console.log({ name: "pdf-title", title: titledLoaded.getTitle(), bytes: titled.pdf.byteLength });
+
 const fontFace = await renderHtmlToPdfDetailed({
   html: `<!doctype html><html><head>
     <link rel="stylesheet" href="assets/font-face.css">
