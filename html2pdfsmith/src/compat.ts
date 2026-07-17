@@ -4,6 +4,9 @@ import type { RenderHtmlToPdfOptions, RenderHtmlToPdfResult } from "./types";
 
 export interface ConvertHtmlToPdfLiteOptions {
   htmlContent: string;
+  baseUrl?: string;
+  stylesheets?: RenderHtmlToPdfOptions["stylesheets"];
+  resourcePolicy?: RenderHtmlToPdfOptions["resourcePolicy"];
   recordId?: string;
   repeatHeaders?: boolean;
   hideHeader?: boolean;
@@ -11,6 +14,9 @@ export interface ConvertHtmlToPdfLiteOptions {
   watermarkUrl?: string | null;
   userLogoUrl?: string | null;
   logoScale?: number;
+  logoOffsetXMm?: number;
+  logoOffsetYMm?: number;
+  headerContacts?: RenderHtmlToPdfOptions["headerContacts"];
   watermarkScale?: number;
   watermarkOpacity?: number;
   patternType?: string;
@@ -27,6 +33,9 @@ export async function convertHtmlToPdfDetailed(
     html: options.htmlContent,
   };
 
+  if (options.baseUrl !== undefined) renderOptions.baseUrl = options.baseUrl;
+  if (options.stylesheets !== undefined) renderOptions.stylesheets = options.stylesheets;
+  if (options.resourcePolicy !== undefined) renderOptions.resourcePolicy = options.resourcePolicy;
   if (options.recordId !== undefined) renderOptions.recordId = options.recordId;
   if (options.repeatHeaders !== undefined) renderOptions.repeatHeaders = options.repeatHeaders;
   if (options.hideHeader !== undefined) renderOptions.hideHeader = options.hideHeader;
@@ -34,6 +43,9 @@ export async function convertHtmlToPdfDetailed(
   if (options.watermarkUrl !== undefined) renderOptions.watermarkUrl = options.watermarkUrl;
   if (options.userLogoUrl !== undefined) renderOptions.userLogoUrl = options.userLogoUrl;
   if (options.logoScale !== undefined) renderOptions.logoScale = options.logoScale;
+  if (options.logoOffsetXMm !== undefined) renderOptions.logoOffsetXMm = options.logoOffsetXMm;
+  if (options.logoOffsetYMm !== undefined) renderOptions.logoOffsetYMm = options.logoOffsetYMm;
+  if (options.headerContacts !== undefined) renderOptions.headerContacts = options.headerContacts;
   if (options.watermarkScale !== undefined) renderOptions.watermarkScale = options.watermarkScale;
   if (options.watermarkOpacity !== undefined) renderOptions.watermarkOpacity = options.watermarkOpacity;
   if (options.patternType !== undefined) renderOptions.patternType = options.patternType;

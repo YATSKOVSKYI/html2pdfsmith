@@ -1,11 +1,11 @@
 import { parseDocument } from "htmlparser2";
 import type { AnyNode, Element } from "domhandler";
 import { DomUtils } from "htmlparser2";
-import { parseCssRules, resolveElementStyle, type CssRule } from "./css";
-import type { ParsedBlock, ParsedCell, ParsedDocument, ParsedRow, ParsedTable } from "./types";
+import { parseCssFontFaces, parseCssPageRule, parseCssRules, resolveElementStyle, type CssRule } from "./css";
+import type { ParsedBlock, ParsedCell, ParsedCellBlock, ParsedChart, ParsedChartType, ParsedDocument, ParsedFontFace, ParsedInlineSegment, ParsedRow, ParsedTable } from "./types";
 
 function isElement(node: AnyNode | null | undefined): node is Element {
-  return !!node && node.type === "tag";
+  return !!node && (node.type === "tag" || node.type === "style" || node.type === "script");
 }
 
 function attr(el: Element, name: string): string {
@@ -27,7 +27,15 @@ function findFirst(root: AnyNode | AnyNode[], predicate: (el: Element) => boolea
 
 function findAll(root: AnyNode | AnyNode[], predicate: (el: Element) => boolean): Element[] {
   const nodes = Array.isArray(root) ? root : [root];
-  return DomUtils.findAll((node) => isElement(node) && predicate(node), nodes) as Element[];
+  const found: Element[] = [];
+  const visit = (node: AnyNode): void => {
+    if (isElement(node) && predicate(node)) found.push(node);
+    if ("children" in node && node.children) {
+      for (const child of node.children) visit(child);
+    }
+  };
+  for (const node of nodes) visit(node);
+  return found;
 }
 
 function directElementChildren(el: Element, tagName?: string): Element[] {
@@ -46,6 +54,13 @@ function normalizeWhitespace(value: string): string {
     .trim();
 }
 
+function normalizePreText(value: string): string {
+  return value
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/^\n+|\n+$/g, "");
+}
+
 function textWithBreaks(node: AnyNode): string {
   if (node.type === "text") return node.data ?? "";
   if (!("children" in node) || !node.children) return "";
@@ -62,10 +77,252 @@ function textWithBreaks(node: AnyNode): string {
   return out;
 }
 
-function firstImageSrc(el: Element): string | undefined {
+function preText(node: AnyNode): string {
+  if (node.type === "text") return node.data ?? "";
+  if (!("children" in node) || !node.children) return "";
+  if (isElement(node) && node.name.toLowerCase() === "br") return "\n";
+  return node.children.map((child) => preText(child)).join("");
+}
+
+function mergeStyle(base: Record<string, string>, next: Record<string, string>): Record<string, string> {
+  return { ...base, ...next };
+}
+
+function isInlineBoxElement(name: string): boolean {
+  return name === "span" || name === "a" || name === "code" || name === "em" || name === "i" || name === "strong" || name === "b" || name === "u" || name === "s" || name === "del";
+}
+
+function hasInlineBoxStyle(style: Record<string, string>): boolean {
+  const display = (style["display"] ?? "").trim().toLowerCase();
+  return display === "inline-block"
+    || display === "inline-flex"
+    || !!style["background-color"]
+    || !!style["border"]
+    || !!style["border-width"]
+    || !!style["border-radius"]
+    || !!style["padding"]
+    || !!style["padding-left"]
+    || !!style["padding-right"]
+    || !!style["padding-top"]
+    || !!style["padding-bottom"];
+}
+
+function sameInlineStyle(a: ParsedInlineSegment, b: ParsedInlineSegment): boolean {
+  if (a.href !== b.href) return false;
+  if (!!a.inlineBox !== !!b.inlineBox) return false;
+  const aEntries = Object.entries(a.styles);
+  const bEntries = Object.entries(b.styles);
+  if (aEntries.length !== bEntries.length) return false;
+  return aEntries.every(([key, value]) => b.styles[key] === value);
+}
+
+function normalizeInlineSegments(segments: ParsedInlineSegment[]): ParsedInlineSegment[] {
+  const normalized: ParsedInlineSegment[] = [];
+  for (const segment of segments) {
+    const whiteSpace = (segment.styles["white-space"] ?? "").trim().toLowerCase();
+    const text = whiteSpace === "pre-line"
+      ? segment.text.replace(/\u00a0/g, " ").replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/[ \t\f\v]+/g, " ")
+      : whiteSpace === "pre-wrap"
+        ? segment.text.replace(/\u00a0/g, " ").replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+        : segment.text.replace(/\u00a0/g, " ").replace(/[ \t\r\f\v\n]+/g, " ");
+    if (!text) continue;
+    const previous = normalized[normalized.length - 1];
+    if (previous && sameInlineStyle(previous, segment)) {
+      previous.text += text;
+    } else {
+      const next: ParsedInlineSegment = { text, styles: segment.styles };
+      if (segment.href) next.href = segment.href;
+      if (segment.inlineBox) next.inlineBox = true;
+      normalized.push(next);
+    }
+  }
+
+  if (normalized[0]) normalized[0].text = normalized[0].text.trimStart();
+  const last = normalized[normalized.length - 1];
+  if (last) last.text = last.text.trimEnd();
+  return normalized.filter((segment) => segment.text);
+}
+
+function parseInlineSegments(node: AnyNode, rules: CssRule[], inherited: Record<string, string> = {}, inheritedInlineBox = false): ParsedInlineSegment[] {
+  if (node.type === "text") {
+    const text = node.data ?? "";
+    if (!text) return [];
+    const segment: ParsedInlineSegment = { text, styles: inherited };
+    if (inheritedInlineBox) segment.inlineBox = true;
+    return [segment];
+  }
+  if (!("children" in node) || !node.children) return [];
+  if (isElement(node) && node.name.toLowerCase() === "br") {
+    const segment: ParsedInlineSegment = { text: "\n", styles: inherited };
+    if (inheritedInlineBox) segment.inlineBox = true;
+    return [segment];
+  }
+
+  let style = inherited;
+  let href: string | undefined;
+  let inlineBox = inheritedInlineBox;
+  if (isElement(node)) {
+    const name = node.name.toLowerCase();
+    const ownStyle = resolveElementStyle(node, rules);
+    style = mergeStyle(inherited, ownStyle);
+    if (name === "strong" || name === "b") style = mergeStyle(style, { "font-weight": "700" });
+    if (name === "em" || name === "i") style = mergeStyle(style, { "font-style": "italic" });
+    if (name === "u") style = mergeStyle(style, { "text-decoration": "underline" });
+    if (name === "s" || name === "del") style = mergeStyle(style, { "text-decoration": "line-through" });
+    if (name === "sup") style = mergeStyle(style, {
+      "vertical-align": ownStyle["vertical-align"] ?? "super",
+      "font-size": ownStyle["font-size"] ?? "75%",
+    });
+    if (name === "sub") style = mergeStyle(style, {
+      "vertical-align": ownStyle["vertical-align"] ?? "sub",
+      "font-size": ownStyle["font-size"] ?? "75%",
+    });
+    if (name === "code") style = mergeStyle(style, { "font-family": "monospace", "background-color": style["background-color"] ?? "#f6f8fa" });
+    inlineBox = inlineBox || (isInlineBoxElement(name) && (name === "code" || hasInlineBoxStyle(ownStyle)));
+    if (style["display"]?.trim().toLowerCase() === "none" || style["visibility"]?.trim().toLowerCase() === "hidden") return [];
+    if (name === "a") href = attr(node, "href").trim() || undefined;
+  }
+
+  const segments = node.children.flatMap((child) => parseInlineSegments(child, rules, style, inlineBox));
+  if (!href) return segments;
+  return segments.map((segment) => ({ ...segment, href: segment.href ?? href }));
+}
+
+function inlineText(segments: ParsedInlineSegment[]): string {
+  return normalizeWhitespace(segments.map((segment) => segment.text).join(""));
+}
+
+function firstImageInfo(el: Element, rules: CssRule[]): { src: string; styles: Record<string, string> } | undefined {
   const img = findFirst(el, (node) => node.name.toLowerCase() === "img");
   const src = img ? attr(img, "src").trim() : "";
-  return src || undefined;
+  if (!img || !src) return undefined;
+  const styles = resolveElementStyle(img, rules);
+  const width = attr(img, "width").trim();
+  const height = attr(img, "height").trim();
+  if (width && !styles["width"]) styles["width"] = width;
+  if (height && !styles["height"]) styles["height"] = height;
+  return { src, styles };
+}
+
+function imageInfo(el: Element, rules: CssRule[]): { src: string; alt: string; styles: Record<string, string> } | undefined {
+  const src = attr(el, "src").trim();
+  if (!src) return undefined;
+  const styles = resolveElementStyle(el, rules);
+  const width = attr(el, "width").trim();
+  const height = attr(el, "height").trim();
+  if (width && !styles["width"]) styles["width"] = width;
+  if (height && !styles["height"]) styles["height"] = height;
+  return { src, alt: attr(el, "alt").trim(), styles };
+}
+
+function isHiddenStyle(style: Record<string, string>): boolean {
+  return style["display"]?.trim().toLowerCase() === "none" || style["visibility"]?.trim().toLowerCase() === "hidden";
+}
+
+function isRichCellContainer(name: string): boolean {
+  return name === "div" || name === "section" || name === "article" || name === "main" || name === "aside" || name === "header" || name === "footer" || name === "figure";
+}
+
+function isCellTextElement(name: string): boolean {
+  return name === "p" || name === "address" || name === "blockquote" || name === "pre" || name === "span" || name === "a" || name === "code" || name === "strong" || name === "b" || name === "em" || name === "i" || name === "u" || name === "s" || name === "del";
+}
+
+function isHeadingName(name: string): name is "h1" | "h2" | "h3" | "h4" | "h5" | "h6" {
+  return /^h[1-6]$/.test(name);
+}
+
+function inheritableStyle(style: Record<string, string>): Record<string, string> {
+  const keys = [
+    "color",
+    "font-family",
+    "font-size",
+    "font-style",
+    "font-weight",
+    "letter-spacing",
+    "line-height",
+    "text-align",
+    "text-decoration",
+    "text-transform",
+    "vertical-align",
+    "baseline-shift",
+    "white-space",
+    "word-break",
+    "word-wrap",
+    "overflow-wrap",
+  ];
+  const out: Record<string, string> = {};
+  for (const key of keys) {
+    if (style[key] != null) out[key] = style[key]!;
+  }
+  return out;
+}
+
+function hasAbsoluteDescendant(el: Element, rules: CssRule[]): boolean {
+  const descendants = findAll(el, () => true);
+  return descendants.some((node) => (resolveElementStyle(node, rules)["position"] ?? "").trim().toLowerCase() === "absolute");
+}
+
+function hasRichCellContent(el: Element, rules: CssRule[]): boolean {
+  return directElementChildren(el).some((child) => {
+    const name = child.name.toLowerCase();
+    if (name === "img" || isRichCellContainer(name) || isHeadingName(name) || name === "p") return true;
+    return hasAbsoluteDescendant(child, rules);
+  });
+}
+
+function parsedTextCellBlock(el: Element, rules: CssRule[], inherited: Record<string, string>): ParsedCellBlock | undefined {
+  const inheritedText = inheritableStyle(inherited);
+  const style = mergeStyle(inheritedText, resolveElementStyle(el, rules));
+  if (isHiddenStyle(style)) return undefined;
+  const textStyle = inheritableStyle(style);
+  const inlines = normalizeInlineSegments((el.children ?? []).flatMap((child) => parseInlineSegments(child, rules, textStyle)));
+  const text = inlineText(inlines) || normalizeWhitespace(textWithBreaks(el));
+  if (!text && inlines.length === 0) return undefined;
+  const name = el.name.toLowerCase();
+  if (isHeadingName(name)) {
+    return { type: "heading", level: Number(name[1]) as 1 | 2 | 3 | 4 | 5 | 6, text, inlines, style };
+  }
+  return { type: "text", text, inlines, style };
+}
+
+function parseCellBlocksFromChildren(nodes: AnyNode[], rules: CssRule[], inherited: Record<string, string>): ParsedCellBlock[] {
+  const blocks: ParsedCellBlock[] = [];
+  for (const child of nodes) {
+    if (child.type === "text") {
+      const text = normalizeWhitespace(child.data ?? "");
+      const style = inheritableStyle(inherited);
+      if (text) blocks.push({ type: "text", text, inlines: [{ text, styles: style }], style });
+      continue;
+    }
+    if (!isElement(child)) continue;
+    const name = child.name.toLowerCase();
+    if (name === "br") continue;
+
+    const inheritedText = inheritableStyle(inherited);
+    const style = mergeStyle(inheritedText, resolveElementStyle(child, rules));
+    if (isHiddenStyle(style)) continue;
+
+    if (name === "img") {
+      const image = imageInfo(child, rules);
+      if (image) blocks.push({ type: "image", src: image.src, alt: image.alt, style: image.styles });
+      continue;
+    }
+
+    if (isRichCellContainer(name)) {
+      blocks.push({ type: "box", blocks: parseCellBlocksFromChildren(child.children ?? [], rules, inheritableStyle(style)), className: className(child), style });
+      continue;
+    }
+
+    if (isHeadingName(name) || isCellTextElement(name)) {
+      const block = parsedTextCellBlock(child, rules, inherited);
+      if (block) blocks.push(block);
+      continue;
+    }
+
+    const nested = parseCellBlocksFromChildren(child.children ?? [], rules, inheritableStyle(style));
+    if (nested.length > 0) blocks.push({ type: "box", blocks: nested, className: className(child), style });
+  }
+  return blocks;
 }
 
 function parseIntAttr(el: Element, name: string, fallback: number): number {
@@ -73,11 +330,109 @@ function parseIntAttr(el: Element, name: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function splitList(value: string): string[] {
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) return parsed.map((item) => String(item).trim()).filter(Boolean);
+    } catch {
+      // Fall back to delimiter parsing below.
+    }
+  }
+  return trimmed.split(/[|,;]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function splitNumberList(value: string): number[] {
+  return splitList(value)
+    .map((item) => Number.parseFloat(item.replace(/\s+/g, "")))
+    .filter((item) => Number.isFinite(item));
+}
+
+function parseChartSeries(value: string): number[][] {
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((series) => Array.isArray(series)
+            ? series.map((item) => Number.parseFloat(String(item).replace(/\s+/g, ""))).filter((item) => Number.isFinite(item))
+            : [])
+          .filter((series) => series.length > 0);
+      }
+    } catch {
+      // Fall back to delimiter parsing below.
+    }
+  }
+  return trimmed
+    .split("|")
+    .map((series) => splitNumberList(series))
+    .filter((series) => series.length > 0);
+}
+
+function parseChart(el: Element): ParsedChart | undefined {
+  const rawType = (attr(el, "type") || attr(el, "data-chart")).trim().toLowerCase();
+  const chartTypeMap: Record<string, ParsedChartType> = {
+    area: "area",
+    bar: "bar",
+    donut: "donut",
+    doughnut: "donut",
+    gauge: "gauge",
+    hbar: "horizontal-bar",
+    "horizontal-bar": "horizontal-bar",
+    line: "line",
+    pie: "pie",
+    radar: "radar",
+    radial: "radial",
+    "radial-stacked": "radial-stacked",
+    spark: "sparkline",
+    sparkline: "sparkline",
+    stacked: "stacked-bar",
+    "stacked-bar": "stacked-bar",
+  };
+  const chartType = chartTypeMap[rawType] ?? "bar";
+  const series = parseChartSeries(attr(el, "data-series") || attr(el, "series"));
+  const values = splitNumberList(attr(el, "data-values") || attr(el, "values"));
+  const chartValues = values.length > 0 ? values : series[0] ?? [];
+  if (chartValues.length === 0) return undefined;
+  const labels = splitList(attr(el, "data-labels") || attr(el, "labels"));
+  const seriesLabels = splitList(attr(el, "data-series-labels") || attr(el, "series-labels"));
+  const colors = splitList(attr(el, "data-colors") || attr(el, "colors"));
+  const gradient = splitList(attr(el, "data-gradient") || attr(el, "gradient"));
+  const max = Number.parseFloat((attr(el, "data-max") || attr(el, "max")).trim());
+  const chart: ParsedChart = {
+    chartType,
+    values: chartValues,
+    labels: labels.length > 0 ? labels : chartValues.map((_, index) => String(index + 1)),
+  };
+  const title = attr(el, "title").trim();
+  const subtitle = attr(el, "subtitle").trim();
+  const unit = attr(el, "unit").trim();
+  const center = (attr(el, "data-center") || attr(el, "center")).trim();
+  const theme = (attr(el, "data-theme") || attr(el, "theme")).trim().toLowerCase();
+  if (title) chart.title = title;
+  if (subtitle) chart.subtitle = subtitle;
+  if (unit) chart.unit = unit;
+  if (center) chart.center = center;
+  if (theme) chart.theme = theme;
+  if (series.length > 0) chart.series = series;
+  if (seriesLabels.length > 0) chart.seriesLabels = seriesLabels;
+  if (Number.isFinite(max) && max > 0) chart.max = max;
+  if (colors.length > 0) chart.colors = colors;
+  if (gradient.length > 0) chart.gradient = gradient;
+  return chart;
+}
+
 function parseCell(el: Element, rules: CssRule[]): ParsedCell {
   const cls = className(el);
   const style = attr(el, "style");
   const styles = resolveElementStyle(el, rules);
-  const text = normalizeWhitespace(textWithBreaks(el));
+  const inlines = normalizeInlineSegments(parseInlineSegments(el, rules, styles));
+  const text = inlineText(inlines) || normalizeWhitespace(textWithBreaks(el));
+  const richBlocks = hasRichCellContent(el, rules) ? parseCellBlocksFromChildren(el.children ?? [], rules, styles) : [];
   const lower = `${cls} ${style} ${Object.entries(styles).map(([k, v]) => `${k}:${v}`).join(";")}`.toLowerCase();
   const isHeader = el.name.toLowerCase() === "th";
   const isPrice = /\bprice\b/.test(cls) || lower.includes("data-price");
@@ -87,6 +442,7 @@ function parseCell(el: Element, rules: CssRule[]): ParsedCell {
 
   const cell: ParsedCell = {
     text,
+    inlines,
     className: cls,
     style,
     styles,
@@ -98,13 +454,18 @@ function parseCell(el: Element, rules: CssRule[]): ParsedCell {
     isDiff,
     isSection,
   };
+  if (richBlocks.length > 0) cell.richBlocks = richBlocks;
 
-  const imageSrc = firstImageSrc(el);
-  if (imageSrc) cell.imageSrc = imageSrc;
+  const image = firstImageInfo(el, rules);
+  if (image && richBlocks.length === 0) {
+    cell.imageSrc = image.src;
+    cell.imageStyles = image.styles;
+  }
   return cell;
 }
 
 function parseRow(el: Element, fallbackKind: ParsedRow["kind"], rules: CssRule[]): ParsedRow {
+  const styles = resolveElementStyle(el, rules);
   const cells = directElementChildren(el).filter((child) => {
     const name = child.name.toLowerCase();
     return name === "td" || name === "th";
@@ -118,7 +479,7 @@ function parseRow(el: Element, fallbackKind: ParsedRow["kind"], rules: CssRule[]
   if (hasSection) kind = "section";
   else if (hasPrice) kind = "price";
 
-  return { cells, kind };
+  return { cells, kind, styles };
 }
 
 function maxColumns(rows: ParsedRow[]): number {
@@ -126,6 +487,17 @@ function maxColumns(rows: ParsedRow[]): number {
     0,
     ...rows.map((row) => row.cells.reduce((sum, cell) => sum + Math.max(1, cell.colspan), 0)),
   );
+}
+
+function parseColumnStyles(tableEl: Element, rules: CssRule[]): Record<string, string>[] {
+  const colgroup = findFirst(tableEl, (el) => el.name.toLowerCase() === "colgroup");
+  if (!colgroup) return [];
+  return directElementChildren(colgroup, "col").map((col) => {
+    const styles = resolveElementStyle(col, rules);
+    const width = attr(col, "width").trim();
+    if (width && !styles["width"]) styles["width"] = width;
+    return styles;
+  });
 }
 
 function normalizeRowspans(rows: ParsedRow[], columnCount: number): ParsedRow[] {
@@ -139,10 +511,11 @@ function normalizeRowspans(rows: ParsedRow[], columnCount: number): ParsedRow[] 
     for (let col = 0; col < columnCount;) {
       const activeCell = active[col];
       if (activeCell && activeCell.remaining > 0) {
-        const { imageSrc: _imageSrc, ...cellWithoutImage } = activeCell.cell;
+        const { imageSrc: _imageSrc, imageStyles: _imageStyles, ...cellWithoutImage } = activeCell.cell;
         const placeholder: ParsedCell = {
           ...cellWithoutImage,
           text: "",
+          inlines: [],
           colspan: 1,
           rowspan: 1,
           isSpanPlaceholder: true,
@@ -158,6 +531,7 @@ function normalizeRowspans(rows: ParsedRow[], columnCount: number): ParsedRow[] 
       if (!source) {
         cells.push({
           text: "",
+          inlines: [],
           className: "",
           style: "",
           styles: {},
@@ -192,6 +566,7 @@ function normalizeRowspans(rows: ParsedRow[], columnCount: number): ParsedRow[] 
 function parseTable(tableEl: Element, rules: CssRule[]): ParsedTable {
   const thead = findFirst(tableEl, (el) => el.name.toLowerCase() === "thead");
   const tbody = findFirst(tableEl, (el) => el.name.toLowerCase() === "tbody");
+  const theadStyles = thead ? resolveElementStyle(thead, rules) : {};
 
   const headRows = thead
     ? directElementChildren(thead, "tr").map((row) => parseRow(row, "header", rules))
@@ -200,13 +575,20 @@ function parseTable(tableEl: Element, rules: CssRule[]): ParsedTable {
   const bodyRows = tbody
     ? directElementChildren(tbody, "tr").map((row) => parseRow(row, "body", rules))
     : directElementChildren(tableEl, "tr").map((row) => parseRow(row, "body", rules));
+  const tfoot = findFirst(tableEl, (el) => el.name.toLowerCase() === "tfoot");
+  const footRows = tfoot
+    ? directElementChildren(tfoot, "tr").map((row) => parseRow(row, "body", rules))
+    : [];
 
-  const columnCount = Math.max(1, maxColumns([...headRows, ...bodyRows]));
+  const columnCount = Math.max(1, maxColumns([...headRows, ...bodyRows, ...footRows]));
+  const columnStyles = parseColumnStyles(tableEl, rules);
 
   return {
     headRows: normalizeRowspans(headRows, columnCount),
-    bodyRows: normalizeRowspans(bodyRows, columnCount),
+    bodyRows: normalizeRowspans([...bodyRows, ...footRows], columnCount),
     columnCount,
+    columnStyles,
+    repeatHeader: theadStyles["display"]?.trim().toLowerCase() === "table-header-group",
   };
 }
 
@@ -224,6 +606,13 @@ function bodyChildren(roots: AnyNode[]): AnyNode[] {
 function parseFlowBlocks(nodes: AnyNode[], rules: CssRule[], blocks: ParsedBlock[] = []): ParsedBlock[] {
   let listStack: Array<{ ordered: boolean; index: number }> = [];
 
+  const isHidden = (style: Record<string, string>) =>
+    style["display"]?.trim().toLowerCase() === "none" || style["visibility"]?.trim().toLowerCase() === "hidden";
+  const isPageBreak = (value: string | undefined) => {
+    const v = value?.trim().toLowerCase();
+    return v === "always" || v === "page" || v === "left" || v === "right";
+  };
+
   const visit = (node: AnyNode): void => {
     if (!isElement(node)) return;
     const name = node.name.toLowerCase();
@@ -231,27 +620,63 @@ function parseFlowBlocks(nodes: AnyNode[], rules: CssRule[], blocks: ParsedBlock
     if (hasClass(node, "contact-card") || hasClass(node, "brand-name") || name === "header") return;
 
     const style = resolveElementStyle(node, rules);
+    if (isHidden(style)) return;
+    if (isPageBreak(style["page-break-before"]) || isPageBreak(style["break-before"])) {
+      blocks.push({ type: "page-break", style });
+    }
+
     if (name === "table") {
       blocks.push({ type: "table", table: parseTable(node, rules), style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
+      return;
+    }
+    if (name === "chart" || attr(node, "data-chart")) {
+      const chart = parseChart(node);
+      if (chart) blocks.push({ type: "chart", chart, style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
       return;
     }
     if (/^h[1-6]$/.test(name)) {
-      const text = normalizeWhitespace(textWithBreaks(node));
-      if (text) blocks.push({ type: "heading", level: Number(name.slice(1)) as 1 | 2 | 3 | 4 | 5 | 6, text, style });
+      const inlines = normalizeInlineSegments(parseInlineSegments(node, rules, style));
+      const text = inlineText(inlines) || normalizeWhitespace(textWithBreaks(node));
+      if (text) blocks.push({ type: "heading", level: Number(name.slice(1)) as 1 | 2 | 3 | 4 | 5 | 6, text, inlines, style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
       return;
     }
-    if (name === "p") {
-      const text = normalizeWhitespace(textWithBreaks(node));
-      if (text) blocks.push({ type: "paragraph", text, style });
+    if (name === "p" || name === "address") {
+      const inlines = normalizeInlineSegments(parseInlineSegments(node, rules, style));
+      const text = inlineText(inlines) || normalizeWhitespace(textWithBreaks(node));
+      if (text) blocks.push({ type: "paragraph", text, inlines, style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
+      return;
+    }
+    if (name === "blockquote") {
+      const inlines = normalizeInlineSegments(parseInlineSegments(node, rules, style));
+      const text = inlineText(inlines) || normalizeWhitespace(textWithBreaks(node));
+      if (text) blocks.push({ type: "blockquote", text, inlines, style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
+      return;
+    }
+    if (name === "pre") {
+      const text = normalizePreText(preText(node));
+      const preStyle = mergeStyle(style, { "font-family": style["font-family"] ?? "monospace" });
+      if (text) blocks.push({ type: "preformatted", text, inlines: [{ text, styles: preStyle }], style: preStyle });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
       return;
     }
     if (name === "img") {
       const src = attr(node, "src").trim();
+      const width = attr(node, "width").trim();
+      const height = attr(node, "height").trim();
+      if (width && !style["width"]) style["width"] = width;
+      if (height && !style["height"]) style["height"] = height;
       if (src) blocks.push({ type: "image", src, alt: attr(node, "alt"), style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
       return;
     }
     if (name === "hr") {
       blocks.push({ type: "hr", style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
       return;
     }
     if (name === "ul" || name === "ol") {
@@ -266,11 +691,30 @@ function parseFlowBlocks(nodes: AnyNode[], rules: CssRule[], blocks: ParsedBlock
       current.index += 1;
       if (listStack.length) listStack[listStack.length - 1] = current;
       const text = normalizeWhitespace(textWithBreaks(node));
-      if (text) blocks.push({ type: "list-item", text, ordered: current.ordered, index: current.index, style });
+      const inlines = normalizeInlineSegments(parseInlineSegments(node, rules, style));
+      if (text) blocks.push({ type: "list-item", text, inlines, ordered: current.ordered, index: current.index, style });
+      return;
+    }
+
+    if (name === "div" || name === "section" || name === "article" || name === "main" || name === "aside") {
+      if ((style["display"] ?? "").trim().toLowerCase() === "grid") {
+        const childBlocks = parseFlowBlocks(node.children ?? [], rules, []);
+        if (childBlocks.length > 0) blocks.push({ type: "grid", blocks: childBlocks, style });
+        if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
+        return;
+      }
+      const before = blocks.length;
+      for (const child of node.children ?? []) visit(child);
+      const producedChildBlock = blocks.length > before;
+      const inlines = normalizeInlineSegments(parseInlineSegments(node, rules, style));
+      const text = inlineText(inlines) || normalizeWhitespace(textWithBreaks(node));
+      if (!producedChildBlock && text) blocks.push({ type: "paragraph", text, inlines, style });
+      if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
       return;
     }
 
     for (const child of node.children ?? []) visit(child);
+    if (isPageBreak(style["page-break-after"]) || isPageBreak(style["break-after"])) blocks.push({ type: "page-break", style });
   };
 
   for (const node of nodes) visit(node);
@@ -293,7 +737,10 @@ function parseContactItems(root: AnyNode[]): { items: string[]; qrSrc?: string }
 export function parsePrintableHtml(html: string): ParsedDocument {
   const doc = parseDocument(html, { decodeEntities: true });
   const roots = doc.children ?? [];
-  const rules = parseCssRules(styleText(roots));
+  const css = styleText(roots);
+  const rules = parseCssRules(css);
+  const fontFaces: ParsedFontFace[] = parseCssFontFaces(css);
+  const page = parseCssPageRule(css);
 
   const brandEl = findFirst(roots, (el) => hasClass(el, "brand-name"));
   const titleEl = findFirst(roots, (el) => el.name.toLowerCase() === "title");
@@ -306,15 +753,17 @@ export function parsePrintableHtml(html: string): ParsedDocument {
   const blocks = parseFlowBlocks(bodyChildren(roots), rules);
   if (blocks.length === 0) {
     const text = normalizeWhitespace(textWithBreaks(doc));
-    if (text) blocks.push({ type: "paragraph", text, style: {} });
+    if (text) blocks.push({ type: "paragraph", text, inlines: [{ text, styles: {} }], style: {} });
   }
   const primaryTable = blocks.find((block): block is Extract<ParsedBlock, { type: "table" }> => block.type === "table")?.table;
 
   const parsed: ParsedDocument = {
     brandText: brandText || "DOCUMENT",
     contactItems: contacts.items,
+    fontFaces,
     blocks,
   };
+  if (page) parsed.page = page;
   if (primaryTable) parsed.primaryTable = primaryTable;
   if (contacts.qrSrc) parsed.contactQrSrc = contacts.qrSrc;
   return parsed;

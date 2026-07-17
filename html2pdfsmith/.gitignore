@@ -3,3 +3,9 @@ dist/
 *.log
 .env
 .DS_Store
+.npmrc
+tmp/
+*.pdf
+
+# Claude Code worktrees
+.claude/

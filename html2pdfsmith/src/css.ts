@@ -1,4 +1,5 @@
 import type { Element } from "domhandler";
+import type { ParsedPageRule } from "./types";
 
 export type StyleMap = Record<string, string>;
 
@@ -12,6 +13,7 @@ export interface BoxSpacing {
 export interface BorderStyle {
   width: number;
   color?: string;
+  style?: "solid" | "dashed" | "dotted" | "none";
 }
 
 export interface CssRule {
@@ -19,6 +21,13 @@ export interface CssRule {
   declarations: StyleMap;
   specificity: number;
   order: number;
+}
+
+export interface CssFontFaceRule {
+  family: string;
+  srcs: string[];
+  fontWeight?: string;
+  fontStyle?: string;
 }
 
 export function parseStyleDeclarations(style: string): StyleMap {
@@ -37,6 +46,46 @@ function stripCssComments(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
+function matchingBraceIndex(css: string, openIndex: number): number {
+  let depth = 0;
+  for (let i = openIndex; i < css.length; i++) {
+    const char = css[i];
+    if (char === "{") depth += 1;
+    else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function mediaAppliesToPrint(query: string): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  if (normalized.includes("not print")) return false;
+  if (normalized.includes("screen") && !normalized.includes("print")) return false;
+  return normalized.includes("print") || normalized.includes("all");
+}
+
+function printCss(css: string): string {
+  let out = "";
+  let cursor = 0;
+  const mediaRe = /@media\s+([^{]+)\{/gi;
+  let match: RegExpExecArray | null;
+  while ((match = mediaRe.exec(css))) {
+    const start = match.index;
+    const open = mediaRe.lastIndex - 1;
+    const close = matchingBraceIndex(css, open);
+    if (close < 0) break;
+    out += css.slice(cursor, start);
+    if (mediaAppliesToPrint(match[1] ?? "")) out += css.slice(open + 1, close);
+    cursor = close + 1;
+    mediaRe.lastIndex = close + 1;
+  }
+  out += css.slice(cursor);
+  return out;
+}
+
 function specificity(selector: string): number {
   let score = 0;
   score += (selector.match(/#/g) ?? []).length * 100;
@@ -47,7 +96,7 @@ function specificity(selector: string): number {
 
 export function parseCssRules(css: string): CssRule[] {
   const rules: CssRule[] = [];
-  const cleaned = stripCssComments(css).replace(/@media[^{]*\{([\s\S]*)\}\s*/g, "$1");
+  const cleaned = printCss(stripCssComments(css));
   const re = /([^{}]+)\{([^{}]*)\}/g;
   let match: RegExpExecArray | null;
   let order = 0;
@@ -60,6 +109,71 @@ export function parseCssRules(css: string): CssRule[] {
     }
   }
   return rules.sort((a, b) => a.specificity - b.specificity || a.order - b.order);
+}
+
+function unquote(value: string): string {
+  return value.trim().replace(/^['"]|['"]$/g, "");
+}
+
+function parseFontFaceSrcs(src: string | undefined): string[] {
+  if (!src) return [];
+  const out: string[] = [];
+  for (const match of src.matchAll(/url\(\s*(['"]?)(.*?)\1\s*\)/gi)) {
+    const value = match[2]?.trim();
+    if (value) out.push(value);
+  }
+  return out;
+}
+
+export function parseCssFontFaces(css: string): CssFontFaceRule[] {
+  const faces: CssFontFaceRule[] = [];
+  const cleaned = printCss(stripCssComments(css));
+  const re = /@font-face\s*\{([^{}]*)\}/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(cleaned))) {
+    const declarations = parseStyleDeclarations(match[1] ?? "");
+    const family = unquote(declarations["font-family"] ?? "");
+    const srcs = parseFontFaceSrcs(declarations["src"]);
+    if (!family || srcs.length === 0) continue;
+
+    const face: CssFontFaceRule = { family, srcs };
+    if (declarations["font-weight"]) face.fontWeight = declarations["font-weight"];
+    if (declarations["font-style"]) face.fontStyle = declarations["font-style"];
+    faces.push(face);
+  }
+  return faces;
+}
+
+function lengthToMm(value: string | undefined): number | undefined {
+  const px = parseLengthPx(value);
+  return px == null ? undefined : px * 25.4 / 96;
+}
+
+function parsePageSize(value: string | undefined): Pick<ParsedPageRule, "size" | "orientation"> {
+  const out: Pick<ParsedPageRule, "size" | "orientation"> = {};
+  const tokens = (value ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.includes("a4")) out.size = "A4";
+  if (tokens.includes("letter")) out.size = "LETTER";
+  if (tokens.includes("landscape")) out.orientation = "landscape";
+  if (tokens.includes("portrait")) out.orientation = "portrait";
+  return out;
+}
+
+export function parseCssPageRule(css: string): ParsedPageRule | undefined {
+  const cleaned = printCss(stripCssComments(css));
+  const match = /@page(?:\s+[^{:]+|\s*)\{([^{}]*)\}/i.exec(cleaned);
+  if (!match?.[1]) return undefined;
+  const declarations = parseStyleDeclarations(match[1]);
+  const size = parsePageSize(declarations["size"]);
+  const margin = lengthToMm(declarations["margin"]?.trim().split(/\s+/)[0]);
+  const marginTop = lengthToMm(declarations["margin-top"]);
+
+  const page: ParsedPageRule = {};
+  if (size.size) page.size = size.size;
+  if (size.orientation) page.orientation = size.orientation;
+  if (marginTop != null) page.marginMm = marginTop;
+  else if (margin != null) page.marginMm = margin;
+  return Object.keys(page).length > 0 ? page : undefined;
 }
 
 function classList(el: Element): string[] {
@@ -200,22 +314,49 @@ function borderWidthPx(value: string | undefined): number | undefined {
   return parseLengthPx(v);
 }
 
+function borderLineStyle(value: string | undefined): BorderStyle["style"] | undefined {
+  if (!value) return undefined;
+  const v = value.trim().toLowerCase();
+  if (v === "solid" || v === "dashed" || v === "dotted" || v === "none") return v;
+  return undefined;
+}
+
+function applyBorderTokens(out: BorderStyle, value: string | undefined): void {
+  if (!value) return;
+  const tokens = value.split(/\s+/).filter(Boolean);
+  for (const token of tokens) {
+    const width = borderWidthPx(token);
+    if (width != null) out.width = width;
+    const color = parseCssColor(token);
+    if (color) out.color = color;
+    const style = borderLineStyle(token);
+    if (style) out.style = style;
+  }
+}
+
 export function parseBorderStyle(styles: StyleMap, fallback: BorderStyle): BorderStyle {
   const out: BorderStyle = { ...fallback };
-  const shorthand = styles["border"];
-  if (shorthand) {
-    const tokens = shorthand.split(/\s+/).filter(Boolean);
-    for (const token of tokens) {
-      const width = borderWidthPx(token);
-      if (width != null) out.width = width;
-      const color = parseCssColor(token);
-      if (color) out.color = color;
-    }
-  }
+  applyBorderTokens(out, styles["border"]);
 
   const width = borderWidthPx(styles["border-width"]);
   if (width != null) out.width = width;
   const color = parseCssColor(styles["border-color"]);
   if (color) out.color = color;
+  const style = borderLineStyle(styles["border-style"]);
+  if (style) out.style = style;
+  return out;
+}
+
+export function parseBorderSideStyle(styles: StyleMap, side: "top" | "right" | "bottom" | "left", fallback: BorderStyle): BorderStyle {
+  const out = parseBorderStyle(styles, fallback);
+  applyBorderTokens(out, styles[`border-${side}`]);
+
+  const width = borderWidthPx(styles[`border-${side}-width`]);
+  if (width != null) out.width = width;
+  const color = parseCssColor(styles[`border-${side}-color`]);
+  if (color) out.color = color;
+  const style = borderLineStyle(styles[`border-${side}-style`]);
+  if (style) out.style = style;
+  if (out.style === "none") out.width = 0;
   return out;
 }

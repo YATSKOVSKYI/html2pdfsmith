@@ -1,11 +1,97 @@
 export type PageOrientation = "portrait" | "landscape";
+/** @deprecated legacy pattern names — use {@link WatermarkLayout}. Kept for back-compat input mapping. */
 export type WatermarkPattern = "auto" | "minimal" | "diagonal" | "triangle" | "corners" | "honeycomb" | "none";
+/** Native tiling arrangements for image/text watermarks. */
+export type WatermarkLayout = "honeycomb" | "grid" | "diagonal" | "single";
+export type WatermarkLayer = "background" | "foreground" | "both";
+export type TableHeaderRepeat = boolean | "auto";
+export type TableRowspanPagination = "avoid" | "split";
+export type TableHorizontalPagination = "none" | "auto" | "always";
+export type TableCellPagination = "off" | "text" | "rich-text";
+export type TableVerticalAlignMode = "layout" | "optical";
+export type TableDensity = "normal" | "compact" | "dense";
+export type TableFit = "content" | "page-width";
+export type TablePreset = "comparison" | "compact-comparison" | "dense-comparison";
+export type TextOverflowWrap = "normal" | "break-word" | "anywhere";
+
+export interface PdfStylesheetInput {
+  href?: string;
+  content?: string;
+}
+
+export type PdfStylesheet = string | PdfStylesheetInput;
+
+export interface PdfResourcePolicy {
+  allowHttp?: boolean;
+  allowFile?: boolean;
+  allowData?: boolean;
+  timeoutMs?: number;
+  maxImageBytes?: number;
+  maxStylesheetBytes?: number;
+  maxFontBytes?: number;
+}
+
+export interface PdfBundledFontFace {
+  family: string;
+  regularPath: string;
+  boldPath?: string;
+  italicPath?: string;
+  boldItalicPath?: string;
+  license?: string;
+  source?: string;
+}
+
+export interface PdfFallbackFontPath {
+  family: string;
+  regularPath: string;
+  boldPath?: string;
+  italicPath?: string;
+  boldItalicPath?: string;
+}
 
 export interface PdfFontOptions {
   regularPath?: string;
   boldPath?: string;
+  italicPath?: string;
+  boldItalicPath?: string;
   regularBytes?: Uint8Array;
   boldBytes?: Uint8Array;
+  italicBytes?: Uint8Array;
+  boldItalicBytes?: Uint8Array;
+  /**
+   * Google Fonts family name, e.g. "Inter", "Roboto", "Noto Sans".
+   * On first use the regular (400) and bold (700) TTF files are downloaded
+   * and cached to disk (`~/.cache/html2pdfsmith/fonts/`).
+   * Subsequent renders read from disk — zero extra RAM.
+   *
+   * Takes priority over `autoDiscover` but is overridden by explicit
+   * `regularPath`/`boldPath`/`regularBytes`/`boldBytes`.
+   */
+  googleFont?: string;
+  /**
+   * Additional Google Fonts that can be selected with CSS `font-family`
+   * inside the document, e.g. `font-family: "Roboto"`.
+   */
+  googleFonts?: string[];
+  /**
+   * Additional Google Font families used as CSS/font coverage fallbacks.
+   * They are resolved through the same disk cache as `googleFont` and
+   * `googleFonts`, and are only loaded when explicitly configured.
+   */
+  fallbackFonts?: string[];
+  /**
+   * Additional local font families used as CSS/font coverage fallbacks.
+   */
+  fallbackFontPaths?: PdfFallbackFontPath[];
+  /**
+   * Optional pre-bundled font face. Use this for offline/no-network rendering.
+   * Takes priority over `googleFont` but is overridden by explicit paths/bytes.
+   */
+  bundled?: PdfBundledFontFace;
+  /**
+   * Additional pre-bundled fonts that can be selected with CSS `font-family`.
+   */
+  bundledFonts?: PdfBundledFontFace[];
   /**
    * When true, the renderer may auto-discover large system fonts for CJK/Cyrillic coverage.
    * Keep false for lowest memory; pass explicit small/subset fonts in production.
@@ -19,6 +105,86 @@ export interface PdfPageOptions {
   marginMm?: number;
 }
 
+export interface PdfTextOptions {
+  overflowWrap?: TextOverflowWrap;
+}
+
+export interface PdfTableOptions {
+  /**
+   * Opinionated generic table defaults. Explicit table options and CSS still win.
+   */
+  preset?: TablePreset;
+  /**
+   * Keep rows connected by rowspan on one page whenever the group fits on a fresh page.
+   * This mirrors spreadsheet/PDF-export behavior for merged vertical cells.
+   */
+  rowspanPagination?: TableRowspanPagination;
+  /**
+   * Split very wide tables into several horizontal page slices.
+   * Repeated headers and rowspans keep working inside every slice.
+   */
+  horizontalPagination?: TableHorizontalPagination;
+  /**
+   * Maximum non-repeated source columns rendered in one horizontal slice.
+   */
+  horizontalPageColumns?: number;
+  /**
+   * Number of left-side source columns repeated in every horizontal slice.
+   */
+  repeatColumns?: number;
+  /**
+   * Split oversized plain text table cells across page fragments.
+   *
+   * `off` preserves historical row-level pagination. `text` paginates text/inlines
+   * while keeping cell chrome on each continuation fragment. `rich-text` also
+   * paginates structural text/heading content nested in rich cells. Images,
+   * positioned blocks, and fixed-height rich blocks remain atomic whole-block
+   * fallbacks with warnings when they cannot fit.
+   */
+  cellPagination?: TableCellPagination;
+  /**
+   * Use layout box math or optical text metrics for `vertical-align: middle`.
+   * Defaults to `layout` for backward compatibility.
+   */
+  verticalAlignMode?: TableVerticalAlignMode;
+  /**
+   * Predictable density preset for table default font, padding, and line-height.
+   * Explicit CSS on rows/cells continues to win.
+   */
+  density?: TableDensity;
+  /**
+   * `page-width` makes table layout use the available page content width.
+   * `content` preserves the table's CSS/content width behavior.
+   */
+  fit?: TableFit;
+  /**
+   * Relative width weight for the first column when generated table widths are used.
+   * Explicit colgroup widths are preserved.
+   */
+  firstColumnWeight?: number;
+  /**
+   * Relative generated column weights. Explicit colgroup widths are preserved.
+   */
+  columnWeights?: number[];
+  /**
+   * Default text alignment for table cells without explicit CSS `text-align`.
+   */
+  cellTextAlign?: PdfPageTextAlign;
+  /**
+   * Default text alignment for header cells without explicit CSS `text-align`.
+   */
+  headerTextAlign?: PdfPageTextAlign;
+  /**
+   * Default text alignment for first-column cells without explicit CSS `text-align`.
+   */
+  firstColumnTextAlign?: PdfPageTextAlign;
+  /**
+   * Clamp generated table font sizes. Explicit CSS `font-size` is not clamped.
+   */
+  minFontSize?: number;
+  maxFontSize?: number;
+}
+
 export type PdfPageTextAlign = "left" | "center" | "right";
 
 export interface PdfPageTemplateOptions {
@@ -27,6 +193,7 @@ export interface PdfPageTemplateOptions {
   align?: PdfPageTextAlign;
   fontSize?: number;
   color?: string;
+  fontFamily?: string;
 }
 
 export interface PdfPageNumberOptions {
@@ -42,19 +209,93 @@ export interface RenderWarning {
   message: string;
 }
 
+/** Built-in glyph for a contact row icon or a QR social badge. */
+export type HeaderContactIcon =
+  | "phone"
+  | "email"
+  | "globe"
+  | "telegram"
+  | "wechat"
+  | "whatsapp"
+  | "instagram"
+  | "facebook"
+  | "youtube"
+  | "viber"
+  | "linkedin"
+  | "x";
+
+export interface HeaderContactItem {
+  /** Built-in icon drawn before the text. Omit for no icon. */
+  icon?: HeaderContactIcon;
+  text: string;
+  /** Optional link target (rendered as a clickable annotation). */
+  href?: string;
+}
+
+export interface HeaderContactsQr {
+  /** Image source for the QR (data URI, http(s), or file per resource policy). */
+  src: string;
+  /** Social glyph drawn in a white disc at the QR centre. */
+  badge?: HeaderContactIcon | null;
+}
+
+export interface HeaderContacts {
+  items?: HeaderContactItem[];
+  qr?: HeaderContactsQr | null;
+}
+
 export interface RenderHtmlToPdfOptions {
   html: string;
+  baseUrl?: string;
+  stylesheets?: PdfStylesheet[];
+  resourcePolicy?: PdfResourcePolicy;
   recordId?: string;
+  /** PDF metadata title. Falls back to `recordId`, then "HTML PDF". */
+  title?: string;
   page?: PdfPageOptions;
+  text?: PdfTextOptions;
+  table?: PdfTableOptions;
   font?: PdfFontOptions;
+  tableHeaderRepeat?: TableHeaderRepeat;
   repeatHeaders?: boolean;
   hideHeader?: boolean;
   watermarkText?: string | null;
   watermarkUrl?: string | null;
   userLogoUrl?: string | null;
   logoScale?: number;
+  /** Horizontal nudge of the header logo from its left anchor, in mm (clamped to ±20). */
+  logoOffsetXMm?: number;
+  /** Vertical nudge of the header logo from the header top, in mm (clamped to ±20). */
+  logoOffsetYMm?: number;
+  /**
+   * Structured header contact block — rendered natively (icon + text rows, plus an
+   * optional QR with a centered social badge). Takes precedence over contacts parsed
+   * from the HTML `.contact-card`. The QR `src` is loaded like any other image asset.
+   */
+  headerContacts?: HeaderContacts | null;
+  /**
+   * Combined size+density knob (1..100). Legacy single control.
+   * Prefer the decoupled {@link watermarkLogoScale} + {@link watermarkDensity}.
+   * Used as the fallback for either when they are not provided.
+   */
   watermarkScale?: number;
+  /** Logo/text size, 1..100 (decoupled from spacing). Falls back to {@link watermarkScale}. */
+  watermarkLogoScale?: number;
+  /** Tiling density, 1..100 — higher = tiles packed closer together. Falls back to {@link watermarkScale}. */
+  watermarkDensity?: number;
   watermarkOpacity?: number;
+  watermarkLayer?: WatermarkLayer;
+  /** Tiling arrangement. Overrides {@link patternType} mapping when set. */
+  watermarkLayout?: WatermarkLayout;
+  /** Rotation of the whole watermark layer, in degrees. Defaults per layout. */
+  watermarkAngle?: number;
+  /**
+   * When true, the watermark is not drawn over the table head band (header /
+   * price rows) — it is clipped to start below them on each page. Useful to keep
+   * titles, prices and the document header readable.
+   */
+  watermarkAvoidHeader?: boolean;
+  /** @deprecated legacy pattern name; mapped to {@link WatermarkLayout}. */
   patternType?: WatermarkPattern | string;
   pageHeader?: PdfPageTemplateOptions;
   pageFooter?: PdfPageTemplateOptions;
@@ -76,31 +317,99 @@ export interface ParsedDocument {
   brandText: string;
   contactItems: string[];
   contactQrSrc?: string;
+  fontFaces: ParsedFontFace[];
+  page?: ParsedPageRule;
   blocks: ParsedBlock[];
   primaryTable?: ParsedTable;
 }
 
+export interface ParsedPageRule {
+  size?: "A4" | "LETTER";
+  orientation?: PageOrientation;
+  marginMm?: number;
+}
+
+export interface ParsedFontFace {
+  family: string;
+  srcs: string[];
+  fontWeight?: string;
+  fontStyle?: string;
+}
+
+export interface ParsedInlineSegment {
+  text: string;
+  styles: Record<string, string>;
+  href?: string;
+  inlineBox?: boolean;
+}
+
+export type ParsedChartType =
+  | "bar"
+  | "horizontal-bar"
+  | "stacked-bar"
+  | "line"
+  | "area"
+  | "sparkline"
+  | "pie"
+  | "donut"
+  | "gauge"
+  | "radial"
+  | "radial-stacked"
+  | "radar";
+
+export interface ParsedChart {
+  chartType: ParsedChartType;
+  title?: string;
+  subtitle?: string;
+  labels: string[];
+  values: number[];
+  series?: number[][];
+  seriesLabels?: string[];
+  max?: number;
+  center?: string;
+  theme?: string;
+  unit?: string;
+  colors?: string[];
+  gradient?: string[];
+}
+
 export type ParsedBlock =
-  | { type: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; text: string; style: Record<string, string> }
-  | { type: "paragraph"; text: string; style: Record<string, string> }
-  | { type: "list-item"; text: string; ordered: boolean; index: number; style: Record<string, string> }
+  | { type: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
+  | { type: "paragraph"; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
+  | { type: "preformatted"; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
+  | { type: "blockquote"; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
+  | { type: "list-item"; text: string; inlines: ParsedInlineSegment[]; ordered: boolean; index: number; style: Record<string, string> }
   | { type: "image"; src: string; alt: string; style: Record<string, string> }
+  | { type: "chart"; chart: ParsedChart; style: Record<string, string> }
+  | { type: "grid"; blocks: ParsedBlock[]; style: Record<string, string> }
   | { type: "hr"; style: Record<string, string> }
+  | { type: "page-break"; style: Record<string, string> }
   | { type: "table"; table: ParsedTable; style: Record<string, string> };
 
 export interface ParsedTable {
   headRows: ParsedRow[];
   bodyRows: ParsedRow[];
   columnCount: number;
+  columnStyles?: Record<string, string>[];
+  repeatHeader?: boolean;
 }
 
 export interface ParsedRow {
   cells: ParsedCell[];
   kind: "header" | "price" | "section" | "body";
+  styles: Record<string, string>;
 }
+
+export type ParsedCellBlock =
+  | { type: "box"; blocks: ParsedCellBlock[]; className: string; style: Record<string, string> }
+  | { type: "text"; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
+  | { type: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; text: string; inlines: ParsedInlineSegment[]; style: Record<string, string> }
+  | { type: "image"; src: string; alt: string; style: Record<string, string> };
 
 export interface ParsedCell {
   text: string;
+  inlines: ParsedInlineSegment[];
+  richBlocks?: ParsedCellBlock[];
   className: string;
   style: string;
   styles: Record<string, string>;
@@ -114,6 +423,7 @@ export interface ParsedCell {
   isSpanPlaceholder?: boolean;
   isSpanPlaceholderEnd?: boolean;
   imageSrc?: string;
+  imageStyles?: Record<string, string>;
 }
 
 export interface RendererStats {

@@ -1,5 +1,10 @@
 import { PDFDocument } from "pdf-lib";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
 import { renderHtmlToPdfDetailed } from "../src/index";
+import { bundledFonts } from "../packages/fonts/src/index";
+
+process.env.HTML2PDFSMITH_CACHE_DIR ??= fileURLToPath(new URL("../tmp/cache", import.meta.url));
 
 async function assertPdf(name: string, html: string, expectedPagesMin: number): Promise<void> {
   const result = await renderHtmlToPdfDetailed({ html, watermarkText: "SMOKE", watermarkOpacity: 10 });
@@ -38,6 +43,632 @@ await assertPdf("table", `<!doctype html><html><body>
   </table>
 </body></html>`, 1);
 
+const baseUrlResources = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head>
+    <link rel="stylesheet" href="assets/base-url-table.css">
+  </head><body>
+    <img class="logo" src="assets/base-url-logo.svg">
+    <h1>Base URL Smoke</h1>
+    <table><tbody><tr><td class="accent">External CSS</td><td class="right">OK</td></tr></tbody></table>
+  </body></html>`,
+  baseUrl: fileURLToPath(new URL("./", import.meta.url)),
+  resourcePolicy: {
+    allowHttp: false,
+    allowFile: true,
+    allowData: true,
+    maxImageBytes: 500_000,
+    maxStylesheetBytes: 100_000,
+  },
+});
+const baseUrlLoaded = await PDFDocument.load(baseUrlResources.pdf);
+if (baseUrlLoaded.getPageCount() !== baseUrlResources.pages) {
+  throw new Error("base url resources: reported page count mismatch");
+}
+if (baseUrlResources.warnings.length > 1) {
+  throw new Error(`base url resources: unexpected warnings ${JSON.stringify(baseUrlResources.warnings)}`);
+}
+console.log({ name: "base-url-resources", pages: baseUrlResources.pages, bytes: baseUrlResources.pdf.byteLength, warnings: baseUrlResources.warnings.length });
+
+const titled = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><body><h1>Custom title</h1></body></html>`,
+  title: "Invoice #12345",
+});
+const titledLoaded = await PDFDocument.load(titled.pdf);
+if (titledLoaded.getTitle() !== "Invoice #12345") {
+  throw new Error(`pdf title: expected custom title, got ${JSON.stringify(titledLoaded.getTitle())}`);
+}
+console.log({ name: "pdf-title", title: titledLoaded.getTitle(), bytes: titled.pdf.byteLength });
+
+const fontFace = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head>
+    <link rel="stylesheet" href="assets/font-face.css">
+  </head><body>
+    <h1>Font Face Smoke</h1>
+    <table><tbody><tr><td>Regular</td><td><strong><em>Bold italic</em></strong></td></tr></tbody></table>
+  </body></html>`,
+  baseUrl: fileURLToPath(new URL("./", import.meta.url)),
+  resourcePolicy: {
+    allowHttp: false,
+    allowFile: true,
+    allowData: true,
+    maxFontBytes: 1_000_000,
+    maxStylesheetBytes: 100_000,
+  },
+});
+const fontFaceLoaded = await PDFDocument.load(fontFace.pdf);
+if (fontFaceLoaded.getPageCount() !== fontFace.pages) {
+  throw new Error("font face: reported page count mismatch");
+}
+if (fontFace.warnings.length !== 0) {
+  throw new Error(`font face: unexpected warnings ${JSON.stringify(fontFace.warnings)}`);
+}
+console.log({ name: "font-face-css", pages: fontFace.pages, bytes: fontFace.pdf.byteLength, warnings: fontFace.warnings.length });
+
+const pageWrapRepeat = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 landscape; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; }
+    thead { display: table-header-group; }
+    th, td { border: 1px solid #bbb; padding: 6px; overflow-wrap: anywhere; }
+  </style></head><body>
+    <table>
+      <thead><tr><th>ID</th><th>Long token</th></tr></thead>
+      <tbody>${Array.from({ length: 28 }, (_, i) => `<tr><td>${i + 1}</td><td>LONG_UNBROKEN_TOKEN_${"X".repeat(80)}</td></tr>`).join("")}</tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  text: { overflowWrap: "break-word" },
+});
+const pageWrapLoaded = await PDFDocument.load(pageWrapRepeat.pdf);
+if (pageWrapLoaded.getPageCount() !== pageWrapRepeat.pages || pageWrapRepeat.orientation !== "landscape") {
+  throw new Error("page wrap repeat: page count or orientation mismatch");
+}
+console.log({ name: "page-wrap-repeat", pages: pageWrapRepeat.pages, bytes: pageWrapRepeat.pdf.byteLength, warnings: pageWrapRepeat.warnings.length });
+
+const mergedTable = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    table { width: 100%; border-collapse: collapse; }
+    thead { display: table-header-group; }
+    th, td { border: 1px solid #bbb; padding: 9px; overflow-wrap: anywhere; }
+    .group { break-inside: avoid; }
+  </style></head><body>
+    <table>
+      <thead><tr><th rowspan="2">Group</th><th colspan="2">Data</th></tr><tr><th>Name</th><th>Long value</th></tr></thead>
+      <tbody>${Array.from({ length: 12 }, (_, i) => `
+        <tr class="group"><td rowspan="2">Group ${i + 1}</td><td>A</td><td>${"MERGED_LONG_VALUE_".repeat(5)}</td></tr>
+        <tr class="group"><td>B</td><td>${"MERGED_LONG_VALUE_".repeat(5)}</td></tr>
+      `).join("")}</tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  table: { rowspanPagination: "avoid" },
+  text: { overflowWrap: "break-word" },
+});
+const mergedLoaded = await PDFDocument.load(mergedTable.pdf);
+if (mergedLoaded.getPageCount() !== mergedTable.pages) {
+  throw new Error("merged table: reported page count mismatch");
+}
+console.log({ name: "merged-table-pagination", pages: mergedTable.pages, bytes: mergedTable.pdf.byteLength, warnings: mergedTable.warnings.length });
+
+const wideTable = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 landscape; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; }
+    thead { display: table-header-group; }
+    th, td { border: 1px solid #bbb; padding: 6px; overflow-wrap: anywhere; }
+  </style></head><body>
+    <table>
+      <thead>
+        <tr><th rowspan="2">Pinned</th><th colspan="8">Wide metrics</th></tr>
+        <tr>${Array.from({ length: 8 }, (_, i) => `<th>M${i + 1}</th>`).join("")}</tr>
+      </thead>
+      <tbody>${Array.from({ length: 8 }, (_, row) => `
+        <tr><td>Row ${row + 1}</td>${Array.from({ length: 8 }, (_, col) => `<td>${row + 1}-${col + 1}-${"LONGVALUE".repeat(3)}</td>`).join("")}</tr>
+      `).join("")}</tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  table: {
+    horizontalPagination: "always",
+    horizontalPageColumns: 3,
+    repeatColumns: 1,
+    rowspanPagination: "avoid",
+  },
+  text: { overflowWrap: "break-word" },
+});
+const wideLoaded = await PDFDocument.load(wideTable.pdf);
+if (wideLoaded.getPageCount() !== wideTable.pages || wideTable.pages < 2) {
+  throw new Error("wide table: horizontal pagination did not produce multiple pages");
+}
+console.log({ name: "wide-table-pagination", pages: wideTable.pages, bytes: wideTable.pdf.byteLength, warnings: wideTable.warnings.length });
+
+const cellPagination = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 portrait; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    thead { display: table-header-group; }
+    th, td { border: 1px solid #9ca3af; padding: 7px; vertical-align: middle; }
+    th { background-color: #eef3f8; }
+    .options { vertical-align: top; line-height: 1.35; }
+    .note { color: #2563eb; font-weight: 700; }
+  </style></head><body>
+    <table>
+      <thead><tr><th>Model</th><th>Options</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>AutoCore GT</td>
+          <td class="options">${Array.from({ length: 110 }, (_, i) => `Option ${i + 1}: adaptive package with <span class="note">inline style</span> and extended warranty terms.`).join("<br>")}</td>
+          <td class="options">${Array.from({ length: 80 }, (_, i) => `Comparison note ${i + 1}: market-specific configuration.`).join("<br>")}</td>
+        </tr>
+      </tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  table: { cellPagination: "text" },
+  text: { overflowWrap: "break-word" },
+});
+const cellPaginationLoaded = await PDFDocument.load(cellPagination.pdf);
+if (cellPaginationLoaded.getPageCount() !== cellPagination.pages || cellPagination.pages < 2) {
+  throw new Error("cell pagination: expected a split row across multiple pages");
+}
+if (cellPagination.warnings.some((warning) => warning.code === "table_row_too_tall")) {
+  throw new Error(`cell pagination: row was not paginated before clipping ${JSON.stringify(cellPagination.warnings)}`);
+}
+console.log({ name: "cell-pagination", pages: cellPagination.pages, bytes: cellPagination.pdf.byteLength, warnings: cellPagination.warnings.length });
+
+const richCellPagination = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 portrait; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #9ca3af; padding: 7px; vertical-align: top; }
+    .rich-card { height: 900px; border: 1px solid #cbd5e1; background-color: #f8fafc; padding: 8px; }
+  </style></head><body>
+    <table>
+      <thead><tr><th>Rich</th><th>Text</th></tr></thead>
+      <tbody><tr><td><div class="rich-card">Rich block kept whole</div></td><td>${"Plain continuation text. ".repeat(260)}</td></tr></tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  table: { cellPagination: "rich-text" },
+  text: { overflowWrap: "break-word" },
+});
+const richCellPaginationLoaded = await PDFDocument.load(richCellPagination.pdf);
+if (richCellPaginationLoaded.getPageCount() !== richCellPagination.pages) {
+  throw new Error("rich cell pagination: reported page count mismatch");
+}
+if (!richCellPagination.warnings.some((warning) => warning.code === "table_cell_pagination_rich_content_unsupported")) {
+  throw new Error(`rich cell pagination: expected unsupported rich content warning ${JSON.stringify(richCellPagination.warnings)}`);
+}
+console.log({ name: "rich-cell-pagination-warning", pages: richCellPagination.pages, bytes: richCellPagination.pdf.byteLength, warnings: richCellPagination.warnings.length });
+
+const richTextPagination = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 portrait; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    thead { display: table-header-group; }
+    th, td { border: 1px solid #9ca3af; padding: 7px; vertical-align: top; }
+    p { margin: 0 0 5px; }
+    .blue { color: #2563eb; font-weight: 700; }
+  </style></head><body>
+    <table>
+      <thead><tr><th>Rich text</th><th>Peer</th></tr></thead>
+      <tbody><tr><td>${Array.from({ length: 95 }, (_, i) => `<p>Rich paragraph ${i + 1} with <span class="blue">inline style</span> and wrapped continuation text.</p>`).join("")}</td><td>Short peer cell</td></tr></tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  table: { cellPagination: "rich-text" },
+  text: { overflowWrap: "break-word" },
+});
+const richTextPaginationLoaded = await PDFDocument.load(richTextPagination.pdf);
+if (richTextPaginationLoaded.getPageCount() !== richTextPagination.pages || richTextPagination.pages < 2) {
+  throw new Error("rich text pagination: expected split rich text across multiple pages");
+}
+if (richTextPagination.warnings.some((warning) => warning.code === "table_row_too_tall")) {
+  throw new Error(`rich text pagination: row was clipped instead of paginated ${JSON.stringify(richTextPagination.warnings)}`);
+}
+console.log({ name: "rich-text-pagination", pages: richTextPagination.pages, bytes: richTextPagination.pdf.byteLength, warnings: richTextPagination.warnings.length });
+
+const rowspanCellPagination = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 portrait; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #9ca3af; padding: 7px; vertical-align: top; }
+  </style></head><body>
+    <table>
+      <tbody>
+        <tr><td rowspan="2">${"Merged owner continuation text. ".repeat(360)}</td><td>Peer</td></tr>
+        <tr><td>Tail</td></tr>
+      </tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  table: { cellPagination: "text", rowspanPagination: "split" },
+  text: { overflowWrap: "break-word" },
+});
+const rowspanCellPaginationLoaded = await PDFDocument.load(rowspanCellPagination.pdf);
+if (rowspanCellPaginationLoaded.getPageCount() !== rowspanCellPagination.pages || rowspanCellPagination.pages < 2) {
+  throw new Error("rowspan cell pagination: expected owner rowspan content to split across multiple pages");
+}
+if (rowspanCellPagination.warnings.some((warning) => warning.code === "table_cell_pagination_rowspan_unsupported" || warning.code === "table_row_too_tall")) {
+  throw new Error(`rowspan cell pagination: owner rowspan should paginate in split mode ${JSON.stringify(rowspanCellPagination.warnings)}`);
+}
+console.log({ name: "rowspan-owner-pagination", pages: rowspanCellPagination.pages, bytes: rowspanCellPagination.pdf.byteLength, warnings: rowspanCellPagination.warnings.length });
+
+const rowspanAvoidCellPagination = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 portrait; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #9ca3af; padding: 7px; vertical-align: top; }
+  </style></head><body>
+    <table>
+      <tbody>
+        <tr><td rowspan="2">Merged</td><td>${"Avoid-mode rowspan long text. ".repeat(360)}</td></tr>
+        <tr><td>Tail</td></tr>
+      </tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  table: { cellPagination: "text", rowspanPagination: "avoid" },
+  text: { overflowWrap: "break-word" },
+});
+const rowspanAvoidCellPaginationLoaded = await PDFDocument.load(rowspanAvoidCellPagination.pdf);
+if (rowspanAvoidCellPaginationLoaded.getPageCount() !== rowspanAvoidCellPagination.pages) {
+  throw new Error("rowspan avoid cell pagination: reported page count mismatch");
+}
+if (!rowspanAvoidCellPagination.warnings.some((warning) => warning.code === "table_cell_pagination_rowspan_unsupported")) {
+  throw new Error(`rowspan avoid cell pagination: expected conservative rowspan warning ${JSON.stringify(rowspanAvoidCellPagination.warnings)}`);
+}
+console.log({ name: "rowspan-avoid-pagination-warning", pages: rowspanAvoidCellPagination.pages, bytes: rowspanAvoidCellPagination.pdf.byteLength, warnings: rowspanAvoidCellPagination.warnings.length });
+
+const rowspanPlaceholderPagination = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 portrait; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    td { border: 1px solid #9ca3af; padding: 7px; vertical-align: top; }
+  </style></head><body>
+    <table>
+      <tbody>
+        <tr><td rowspan="2">Group label</td><td>Short intro</td></tr>
+        <tr><td>${"Long cell inside a split rowspan group. ".repeat(330)}</td></tr>
+      </tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  table: { cellPagination: "text", rowspanPagination: "split" },
+  text: { overflowWrap: "break-word" },
+});
+const rowspanPlaceholderPaginationLoaded = await PDFDocument.load(rowspanPlaceholderPagination.pdf);
+if (rowspanPlaceholderPaginationLoaded.getPageCount() !== rowspanPlaceholderPagination.pages || rowspanPlaceholderPagination.pages < 2) {
+  throw new Error("rowspan placeholder pagination: expected split row inside split rowspan group");
+}
+if (rowspanPlaceholderPagination.warnings.some((warning) => warning.code === "table_cell_pagination_rowspan_unsupported")) {
+  throw new Error(`rowspan placeholder pagination: placeholder row should be supported in split mode ${JSON.stringify(rowspanPlaceholderPagination.warnings)}`);
+}
+console.log({ name: "rowspan-placeholder-pagination", pages: rowspanPlaceholderPagination.pages, bytes: rowspanPlaceholderPagination.pdf.byteLength, warnings: rowspanPlaceholderPagination.warnings.length });
+
+const productionTableFit = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 landscape; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    thead { display: table-header-group; }
+    th, td { border: 1px solid #cbd5e1; vertical-align: middle; overflow-wrap: anywhere; }
+    th { background-color: #eef3f8; }
+  </style></head><body>
+    <table>
+      <thead><tr><th>Parameter</th>${Array.from({ length: 10 }, (_, i) => `<th>Config ${i + 1}</th>`).join("")}</tr></thead>
+      <tbody>${Array.from({ length: 16 }, (_, row) => `<tr><td>Параметр ${row + 1} ● mixed Latin/Cyrillic</td>${Array.from({ length: 10 }, (_, col) => `<td>${row % 3 === 0 ? "●" : row % 3 === 1 ? "○" : "-"} Value ${row + 1}.${col + 1}<br>Компактное значение</td>`).join("")}</tr>`).join("")}</tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  table: {
+    density: "dense",
+    fit: "page-width",
+    firstColumnWeight: 1.65,
+    minFontSize: 6.4,
+    maxFontSize: 9.2,
+    verticalAlignMode: "optical",
+  },
+  text: { overflowWrap: "break-word" },
+});
+const productionTableFitLoaded = await PDFDocument.load(productionTableFit.pdf);
+if (productionTableFitLoaded.getPageCount() !== productionTableFit.pages) {
+  throw new Error("production table fit: reported page count mismatch");
+}
+console.log({ name: "production-table-fit", pages: productionTableFit.pages, bytes: productionTableFit.pdf.byteLength, warnings: productionTableFit.warnings.length });
+
+const comparisonPreset = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @page { size: A4 landscape; margin: 8mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    thead { display: table-header-group; }
+    th, td { border: 1px solid #cbd5e1; vertical-align: middle; overflow-wrap: anywhere; }
+    th { background-color: #eef3f8; }
+    .explicit-left { text-align: left; }
+  </style></head><body>
+    <table>
+      <thead><tr><th>Feature</th>${Array.from({ length: 8 }, (_, i) => `<th>Trim ${i + 1}</th>`).join("")}</tr></thead>
+      <tbody>${Array.from({ length: 12 }, (_, row) => `<tr><td class="explicit-left">Feature ${row + 1}</td>${Array.from({ length: 8 }, (_, col) => `<td>${row % 2 ? "Included" : "Optional"} ${col + 1}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  tableHeaderRepeat: "auto",
+  table: {
+    preset: "dense-comparison",
+    columnWeights: [1.8, 1, 1, 1, 1, 1, 1, 1, 1],
+  },
+  text: { overflowWrap: "break-word" },
+});
+const comparisonPresetLoaded = await PDFDocument.load(comparisonPreset.pdf);
+if (comparisonPresetLoaded.getPageCount() !== comparisonPreset.pages) {
+  throw new Error("comparison preset: reported page count mismatch");
+}
+console.log({ name: "comparison-preset", pages: comparisonPreset.pages, bytes: comparisonPreset.pdf.byteLength, warnings: comparisonPreset.warnings.length });
+
+const alignmentIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="8" y="8" width="48" height="48" rx="10" fill="#2563eb"/><circle cx="32" cy="30" r="11" fill="#fff"/></svg>`)}`;
+const alignment = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #bbb; padding: 6px; height: 72px; }
+    .top { vertical-align: top; text-align: left; }
+    .middle { vertical-align: middle; text-align: center; }
+    .bottom { vertical-align: bottom; text-align: right; }
+    img { width: 28px; height: 28px; object-fit: contain; }
+  </style></head><body>
+    <table>
+      <tbody>
+        <tr><td class="top">Top</td><td class="middle">Middle</td><td class="bottom">Bottom</td></tr>
+        <tr><td class="top"><img src="${alignmentIcon}"></td><td class="middle"><img src="${alignmentIcon}"></td><td class="bottom"><img src="${alignmentIcon}"></td></tr>
+      </tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+  resourcePolicy: { allowData: true },
+});
+const alignmentLoaded = await PDFDocument.load(alignment.pdf);
+if (alignmentLoaded.getPageCount() !== alignment.pages) {
+  throw new Error("alignment: reported page count mismatch");
+}
+console.log({ name: "alignment-controls", pages: alignment.pages, bytes: alignment.pdf.byteLength, warnings: alignment.warnings.length });
+
+const transformIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="8" y="8" width="48" height="48" rx="9" fill="#0f766e"/><path d="M18 32h22" stroke="#fff" stroke-width="7" stroke-linecap="round"/><path d="M36 20l12 12-12 12" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>`)}`;
+const transforms = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    table { width: 100%; border-collapse: collapse; }
+    td { border: 1px solid #bbb; padding: 8px; height: 72px; text-align: center; vertical-align: middle; }
+    img { width: 30px; height: 30px; object-fit: contain; transform-origin: center center; }
+    .mirror img { transform: scaleX(-1); }
+    .rotate img { -webkit-transform: rotate(20deg) scale(1.1); -webkit-transform-origin: center center; }
+    .faded img { opacity: 0.4; transform: translate(6px, -3px); }
+  </style></head><body>
+    <table><tbody><tr>
+      <td><img src="${transformIcon}"></td>
+      <td class="mirror"><img src="${transformIcon}"></td>
+      <td class="rotate"><img src="${transformIcon}"></td>
+      <td class="faded"><img src="${transformIcon}"></td>
+    </tr></tbody></table>
+    <img style="width: 40px; height: 40px; transform: rotate(-15deg); opacity: .6" src="${transformIcon}">
+  </body></html>`,
+  hideHeader: true,
+  resourcePolicy: { allowData: true },
+});
+const transformsLoaded = await PDFDocument.load(transforms.pdf);
+if (transformsLoaded.getPageCount() !== transforms.pages) {
+  throw new Error("transforms: reported page count mismatch");
+}
+console.log({ name: "transform-controls", pages: transforms.pages, bytes: transforms.pdf.byteLength, warnings: transforms.warnings.length });
+
+const layoutControls = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+    th, td { border: 1px solid #bbb; padding: 6px; height: 48px; }
+    th { border-bottom: 2px solid #222; }
+    .nowrap { white-space: nowrap; }
+    .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pre { white-space: pre-line; }
+    .sides { border-left: 3px solid #2563eb; border-right: 2px dashed #d97706; border-bottom: 2px dotted #059669; }
+  </style></head><body>
+    <table>
+      <colgroup><col style="width: 70px"><col style="width: 120px"><col style="width: 30%"><col></colgroup>
+      <thead><tr><th>ID</th><th>No wrap</th><th>Ellipsis</th><th>Pre</th></tr></thead>
+      <tbody><tr><td class="sides">1</td><td class="nowrap">VIN-UNBROKEN-123456789</td><td class="ellipsis">Very long text value that should be shortened with an ellipsis</td><td class="pre">One
+Two</td></tr></tbody>
+    </table>
+  </body></html>`,
+  hideHeader: true,
+});
+const layoutLoaded = await PDFDocument.load(layoutControls.pdf);
+if (layoutLoaded.getPageCount() !== layoutControls.pages) {
+  throw new Error("layout controls: reported page count mismatch");
+}
+console.log({ name: "layout-controls", pages: layoutControls.pages, bytes: layoutControls.pdf.byteLength, warnings: layoutControls.warnings.length });
+
+const visualBg = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="#eff6ff"/><path d="M0 32L32 0" stroke="#93c5fd" stroke-width="4"/></svg>`)}`;
+const visualCss = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    .card { padding: 10px; margin-bottom: 8px; border-radius: 6px; background-color: #fff; background-image: url("${visualBg}"); background-size: 32px 32px; background-repeat: repeat; box-shadow: 0 4px 10px rgba(15, 23, 42, .22); text-transform: capitalize; }
+    table { width: 100%; border-collapse: collapse; }
+    td { height: 60px; border: 1px solid #bbb; padding: 6px; border-radius: 6px; background-image: url("${visualBg}"); background-size: contain; background-repeat: no-repeat; background-position: center center; text-transform: uppercase; }
+  </style></head><body>
+    <div class="card">visual css controls</div>
+    <table><tbody><tr><td>approved</td><td style="box-shadow: 0 4px 8px rgba(0,0,0,.2)">shadow cell</td></tr></tbody></table>
+  </body></html>`,
+  hideHeader: true,
+  resourcePolicy: { allowData: true },
+});
+const visualLoaded = await PDFDocument.load(visualCss.pdf);
+if (visualLoaded.getPageCount() !== visualCss.pages) {
+  throw new Error("visual css: reported page count mismatch");
+}
+console.log({ name: "visual-css-controls", pages: visualCss.pages, bytes: visualCss.pdf.byteLength, warnings: visualCss.warnings.length });
+
+const chartControls = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    chart { height: 78px; margin-bottom: 8px; padding: 8px 10px; border: 1px solid #d8e0ea; border-radius: 8px; background-color: #fff; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grid chart { height: 90px; margin-bottom: 0; }
+  </style></head><body>
+    <chart type="bar" title="Memory" subtitle="Direct PDF chart" unit=" MB" data-labels="Warm,Render,Peak" data-values="248,96,344" data-colors="#334155,#2563eb,#0f766e"></chart>
+    <div class="grid">
+      <chart type="line" title="Trend" data-theme="aurora" data-labels="A,B,C,D" data-series-labels="Desktop,Mobile" data-series="10,18,14,26|8,12,16,20"></chart>
+      <chart type="donut" title="Mix" unit=" MB" data-labels="Heap,External,Buffers" data-values="34,18,2" data-colors="#2563eb,#f59e0b,#0f766e"></chart>
+      <chart type="radial" title="Radial" unit="%" data-max="100" data-center="84" data-labels="Speed,Quality,Memory" data-values="84,67,92" data-colors="#2563eb,#0f766e,#f59e0b"></chart>
+      <chart type="radial-stacked" title="Stacked gauge" unit=" MB" data-labels="Heap,External,Buffers" data-values="38,19,2" data-colors="#2563eb,#93c5fd,#0f766e"></chart>
+      <chart type="radar" title="Radar" data-max="100" data-labels="Layout,Tables,Fonts,SVG,Charts,Memory" data-series-labels="Desktop,Mobile" data-series="82,94,76,70,88,66|62,70,83,61,74,92" data-colors="#93c5fd,#2563eb"></chart>
+      <chart type="horizontal-bar" title="Horizontal" unit="%" data-max="100" data-labels="Tables,Fonts,SVG" data-values="92,86,74" data-colors="#2563eb,#0f766e,#f59e0b"></chart>
+      <chart type="stacked-bar" title="Stacked bars" data-labels="Q1,Q2,Q3" data-series-labels="Heap,External" data-series="34,38,42|18,16,22" data-colors="#2563eb,#93c5fd"></chart>
+      <chart type="pie" title="Pie" data-labels="A,B,C" data-values="42,31,27" data-colors="#2563eb,#0f766e,#f59e0b"></chart>
+      <chart type="gauge" title="Gauge" unit="%" data-max="100" data-values="78" data-colors="#2563eb"></chart>
+      <chart type="sparkline" title="Sparkline" unit=" ms" data-theme="royal" data-labels="1,2,3,4,5,6" data-series-labels="Current,Previous" data-series="44,38,48,42,36,31|49,45,46,41,39,35"></chart>
+    </div>
+  </body></html>`,
+  hideHeader: true,
+});
+const chartControlsLoaded = await PDFDocument.load(chartControls.pdf);
+if (chartControlsLoaded.getPageCount() !== chartControls.pages) {
+  throw new Error("chart controls: reported page count mismatch");
+}
+console.log({ name: "chart-controls", pages: chartControls.pages, bytes: chartControls.pdf.byteLength, warnings: chartControls.warnings.length });
+
+const productionLayout = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    @media screen { h1 { color: red; } .screen-only { display: block; } }
+    @media print { h1 { color: #102a43; text-transform: uppercase; } .screen-only { display: none; } .print-only { display: block; } }
+    .print-only { border-radius: 6px; overflow: hidden; background-color: #eef6ff; padding: 8px; box-shadow: 0 3px 8px rgba(0,0,0,.18); }
+    table { width: 100%; table-layout: auto; border-collapse: collapse; }
+    th, td { border: 1px solid #bbb; padding: 6px; }
+    .sku { white-space: nowrap; }
+    .name { overflow-wrap: break-word; }
+    .clip { border-radius: 8px; overflow: hidden; background-color: #dcfce7; text-transform: uppercase; }
+  </style></head><body>
+    <h1>production layout</h1>
+    <p class="screen-only">screen only</p>
+    <div class="print-only">print only</div>
+    <table><thead><tr><th>ID</th><th>SKU</th><th>Name</th><th>Status</th></tr></thead>
+      <tbody><tr><td>1</td><td class="sku">SKU-LONG-00001</td><td class="name">Long content-driven column title</td><td class="clip">approved status</td></tr></tbody></table>
+  </body></html>`,
+  hideHeader: true,
+});
+const productionLoaded = await PDFDocument.load(productionLayout.pdf);
+if (productionLoaded.getPageCount() !== productionLayout.pages) {
+  throw new Error("production layout: reported page count mismatch");
+}
+console.log({ name: "production-layout-controls", pages: productionLayout.pages, bytes: productionLayout.pdf.byteLength, warnings: productionLayout.warnings.length });
+
+const inlineBadges = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    p { font-size: 11px; line-height: 1.5; text-align: center; }
+    .badge { display: inline-block; padding: 3px 7px; border-radius: 999px; font-size: 8px; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+    .ok { background-color: #dcfce7; color: #14532d; border: 1px solid #86efac; }
+    .warn { background-color: #fff7ed; color: #9a3412; border: 1px dashed #fdba74; }
+    table { width: 100%; border-collapse: collapse; }
+    td { border: 1px solid #bbb; padding: 8px; vertical-align: middle; }
+  </style></head><body>
+    <p>Inline <span class="badge ok">approved</span> and <span class="badge warn">review</span> badges.</p>
+    <table><tbody><tr><td>Cell status</td><td><span class="badge ok">paid</span> with text wrap</td></tr></tbody></table>
+  </body></html>`,
+  hideHeader: true,
+});
+const inlineBadgesLoaded = await PDFDocument.load(inlineBadges.pdf);
+if (inlineBadgesLoaded.getPageCount() !== inlineBadges.pages) {
+  throw new Error("inline badges: reported page count mismatch");
+}
+console.log({ name: "inline-badges", pages: inlineBadges.pages, bytes: inlineBadges.pdf.byteLength, warnings: inlineBadges.warnings.length });
+
+const inlineScripts = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    body { font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; }
+    td { border: 1px solid #bbb; padding: 8px; }
+    .css-super { vertical-align: super; font-size: 70%; color: #2563eb; }
+    .css-sub { vertical-align: sub; font-size: 70%; color: #c2410c; }
+    .shift-up { baseline-shift: 35%; font-size: 70%; color: #0f766e; }
+    .shift-down { baseline-shift: -20%; font-size: 70%; color: #7c2d12; }
+  </style></head><body>
+    <p>Formula: E = mc<sup>2</sup>, water: H<sub>2</sub>O, custom X<span class="css-super">n+1</span> and CO<span class="css-sub">2</span>.</p>
+    <p>Baseline shift: A<span class="shift-up">up</span> and B<span class="shift-down">down</span>.</p>
+    <table><tbody><tr><td>m<sup>3</sup>/h</td><td>Battery LiFePO<sub>4</sub></td><td>X<span style="baseline-shift: super; font-size: 70%">svg</span></td></tr></tbody></table>
+  </body></html>`,
+  hideHeader: true,
+});
+const inlineScriptsLoaded = await PDFDocument.load(inlineScripts.pdf);
+if (inlineScriptsLoaded.getPageCount() !== inlineScripts.pages) {
+  throw new Error("inline scripts: reported page count mismatch");
+}
+console.log({ name: "inline-sub-sup", pages: inlineScripts.pages, bytes: inlineScripts.pdf.byteLength, warnings: inlineScripts.warnings.length });
+
+const richCellIcon = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60"><rect x="8" y="24" width="92" height="22" rx="8" fill="#b5978b" stroke="#334155"/><circle cx="32" cy="47" r="10" fill="#111827"/><circle cx="82" cy="47" r="10" fill="#111827"/></svg>`)}`;
+const richCell = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><head><style>
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    td { border: 1px solid #d8dee8; padding: 8px; vertical-align: top; }
+    .card { position: relative; height: 96px; overflow: hidden; border: 1px solid #d8dee8; border-radius: 8px; background-color: #fff; }
+    .badge { position: absolute; top: 0; left: 0; display: inline-block; padding: 4px 9px; background-color: #e5e7eb; border: 1px solid #cbd5e1; font-size: 7px; font-weight: 700; }
+    img { width: 90px; height: 42px; margin-top: 20px; margin-bottom: 5px; text-align: center; object-fit: contain; }
+    h3 { margin: 0 10px 4px; font-size: 11px; }
+    p { margin: 0 10px; font-size: 8px; color: #64748b; }
+  </style></head><body>
+    <table><tbody><tr><td>
+      <div class="card"><span class="badge">2025</span><img src="${richCellIcon}"><h3>Model card</h3><p>Rich table cell content</p></div>
+    </td><td>Plain cell</td></tr></tbody></table>
+  </body></html>`,
+  hideHeader: true,
+  resourcePolicy: { allowData: true },
+});
+const richCellLoaded = await PDFDocument.load(richCell.pdf);
+if (richCellLoaded.getPageCount() !== richCell.pages) {
+  throw new Error("rich cell layout: reported page count mismatch");
+}
+console.log({ name: "rich-cell-layout", pages: richCell.pages, bytes: richCell.pdf.byteLength, warnings: richCell.warnings.length });
+
+const richHtmlFilePath = fileURLToPath(new URL("./fixtures/comparison-rich-table.html", import.meta.url));
+const richHtmlFile = await renderHtmlToPdfDetailed({
+  html: await Bun.file(richHtmlFilePath).text(),
+  baseUrl: dirname(richHtmlFilePath),
+  hideHeader: true,
+  font: {
+    bundled: bundledFonts.openSans,
+  },
+  resourcePolicy: {
+    allowData: true,
+    allowFile: true,
+    allowHttp: false,
+  },
+});
+const richHtmlFileLoaded = await PDFDocument.load(richHtmlFile.pdf);
+if (richHtmlFileLoaded.getPageCount() !== richHtmlFile.pages) {
+  throw new Error("rich html file: reported page count mismatch");
+}
+console.log({ name: "rich-html-file", pages: richHtmlFile.pages, bytes: richHtmlFile.pdf.byteLength, warnings: richHtmlFile.warnings.length });
+
+await assertPdf("document-blocks", `<!doctype html><html><body>
+  <style>
+    .quote { background-color: #f6f8fa; border-color: #94a3b8; }
+    .boxed { border: 1px solid #94a3b8; padding: 8px 10px; margin: 6px 12px; line-height: 1.5; }
+    tr.total { background-color: #eef7ee; font-weight: bold; text-align: right; }
+  </style>
+  <section>
+    <div class="boxed">This plain div should render as a paragraph with <strong>bold</strong>, <em>italic</em>, <u>underline</u>, <span style="color: #2563eb">blue span</span>, <code>inlineCode()</code>, and <a href="https://example.com">a link</a>.</div>
+    <blockquote class="quote">A blockquote should keep its own visual treatment.</blockquote>
+    <pre>const answer = 42;
+console.log(answer);</pre>
+    <img style="width: 32px" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGP4z8Dwn6Hh/38AEXkEfRkE0tIAAAAASUVORK5CYII=">
+  </section>
+  <div style="page-break-after: always"></div>
+  <table>
+    <tbody>
+      <tr><td>Subtotal</td><td>100</td></tr>
+      <tr class="total"><td>Total</td><td>120</td></tr>
+    </tbody>
+  </table>
+</body></html>`, 2);
+
 const numbered = await renderHtmlToPdfDetailed({
   html: `<!doctype html><html><body><p>Numbered document.</p></body></html>`,
   pageHeader: { text: "Smoke Header", align: "right" },
@@ -49,3 +680,43 @@ if (numberedLoaded.getPageCount() !== numbered.pages) {
   throw new Error("page chrome: reported page count mismatch");
 }
 console.log({ name: "page-chrome", pages: numbered.pages, bytes: numbered.pdf.byteLength, warnings: numbered.warnings.length });
+
+const fontFallback = await renderHtmlToPdfDetailed({
+  html: `<!doctype html><html><body>
+    <table>
+      <tbody>
+        <tr>
+          <td style="font-family: 'Roboto'; text-align: left; padding-left: 14px; font-size: 9pt">Left</td>
+          <td style="font-family: 'Lato'; text-align: center; font-size: 11pt; font-weight: 400">Center</td>
+          <td style="font-family: 'Merriweather'; text-align: right; font-size: 8pt; font-weight: 700; padding-right: 16px">Right</td>
+        </tr>
+      </tbody>
+    </table>
+  </body></html>`,
+  font: { googleFonts: ["Roboto", "Lato", "Merriweather"] },
+});
+const fontFallbackLoaded = await PDFDocument.load(fontFallback.pdf);
+if (fontFallbackLoaded.getPageCount() !== fontFallback.pages) {
+  throw new Error("font table: reported page count mismatch");
+}
+if (fontFallback.warnings.some((warning) => warning.code === "font_fallback")) {
+  throw new Error(`font table: unexpected font fallback warning ${JSON.stringify(fontFallback.warnings)}`);
+}
+console.log({ name: "font-table-css", pages: fontFallback.pages, bytes: fontFallback.pdf.byteLength, warnings: fontFallback.warnings.length });
+
+for (const layer of ["background", "foreground", "both"] as const) {
+  const watermarked = await renderHtmlToPdfDetailed({
+    html: `<!doctype html><html><body>
+      <p style="page-break-after: always">Watermark layer ${layer} page 1.</p>
+      <p>Watermark layer ${layer} page 2.</p>
+    </body></html>`,
+    watermarkText: layer.toUpperCase(),
+    watermarkLayer: layer,
+    watermarkOpacity: 0.08,
+  });
+  const loaded = await PDFDocument.load(watermarked.pdf);
+  if (loaded.getPageCount() !== watermarked.pages || watermarked.pages !== 2) {
+    throw new Error(`watermark ${layer}: expected 2 pages, got ${watermarked.pages}`);
+  }
+  console.log({ name: `watermark-${layer}`, pages: watermarked.pages, bytes: watermarked.pdf.byteLength, warnings: watermarked.warnings.length });
+}

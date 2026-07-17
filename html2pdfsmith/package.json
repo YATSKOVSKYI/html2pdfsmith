@@ -1,38 +1,107 @@
 {
   "name": "html2pdfsmith",
-  "version": "0.1.0",
-  "description": "Browserless HTML-to-PDF rendering engine for TypeScript and Bun.",
+  "version": "0.2.9",
+  "description": "Browserless HTML-to-PDF rendering engine for TypeScript, Node.js, and Bun. No Chromium, low-memory streaming renderer, CSS font-family, Google Fonts caching, and local font installs.",
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "html2pdfsmith": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "files": [
-    "src",
-    "README.md"
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "scripts": {
+    "build": "tsup src/index.ts src/cli.ts --format esm --dts --clean",
     "typecheck": "tsc --noEmit",
+    "prepare": "npm run build",
+    "prepack": "bun run build",
     "example": "bun run examples/simple-table.ts",
     "example:css-table": "bun run examples/css-table.ts",
     "example:document": "bun run examples/simple-document.ts",
+    "example:fonts": "bun run examples/font-table.ts",
+    "example:bundled-fonts": "bun run examples/bundled-fonts.ts",
+    "example:table-showcase": "bun run examples/table-showcase.ts",
+    "example:resources": "bun run examples/base-url-resources.ts",
+    "example:font-face": "bun run examples/font-face.ts",
+    "example:font-family-fallback": "bun run examples/font-family-fallback.ts",
+    "example:page-wrap-repeat": "bun run examples/page-wrap-repeat.ts",
+    "example:merged-table": "bun run examples/merged-table-pagination.ts",
+    "example:wide-table": "bun run examples/wide-table-pagination.ts",
+    "example:alignment": "bun run examples/alignment-controls.ts",
+    "example:transform": "bun run examples/transform-controls.ts",
+    "example:layout": "bun run examples/layout-controls.ts",
+    "example:visual-css": "bun run examples/visual-css-controls.ts",
+    "example:production-layout": "bun run examples/production-layout-controls.ts",
+    "example:production-comparison": "bun run examples/production-comparison-table.ts",
+    "example:inline-badges": "bun run examples/inline-badges.ts",
+    "example:error-handling": "bun run examples/error-handling.ts",
+    "example:comparison-showcase": "bun run examples/comparison-table-showcase.ts",
+    "example:html-file": "bun run examples/render-html-file.ts examples/fixtures/comparison-rich-table.html tmp/pdfs/comparison-rich-table.from-html.pdf",
+    "example:autocore": "bun run examples/autocore-invoice.ts",
     "bench": "bun --expose-gc run examples/bench-table.ts",
-    "smoke": "bun run examples/smoke.ts"
+    "bench:internal": "bun --expose-gc run examples/internal-benchmark.ts",
+    "smoke": "bun run examples/smoke.ts",
+    "visual": "bun run examples/visual-regression.ts",
+    "visual:update": "bun run examples/visual-regression.ts --update",
+    "test:fonts": "bun run examples/test-google-fonts.ts"
   },
+  "keywords": [
+    "pdf",
+    "html-to-pdf",
+    "html2pdf",
+    "pdfkit",
+    "browserless",
+    "bun",
+    "typescript",
+    "pdf-generator",
+    "pdf-render",
+    "google-fonts",
+    "node",
+    "nodejs",
+    "streaming",
+    "low-memory",
+    "no-chromium",
+    "no-puppeteer",
+    "document",
+    "table",
+    "report"
+  ],
+  "author": "dmytro_yatskovskyi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YATSKOVSKYI/html2pdfsmith.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YATSKOVSKYI/html2pdfsmith/issues"
+  },
+  "homepage": "https://github.com/YATSKOVSKYI/html2pdfsmith#readme",
   "dependencies": {
-    "@pdf-lib/fontkit": "^1.1.1",
-    "@types/pdfkit": "^0.17.6",
-    "@types/svg-to-pdfkit": "^0.1.4",
     "domhandler": "^5.0.3",
-    "domutils": "^3.2.2",
     "htmlparser2": "^10.0.0",
-    "pdf-lib": "^1.17.1",
     "pdfkit": "^0.18.0",
     "svg-to-pdfkit": "^0.1.8"
   },
   "devDependencies": {
+    "@types/pdfkit": "^0.17.6",
+    "@types/svg-to-pdfkit": "^0.1.4",
     "bun-types": "latest",
+    "pdf-lib": "^1.17.1",
+    "tsup": "^8.0.2",
     "typescript": "^5.8.0"
   },
   "engines": {
+    "node": ">=18.17.0",
     "bun": ">=1.2.0"
   }
 }

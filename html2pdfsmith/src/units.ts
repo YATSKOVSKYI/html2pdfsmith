@@ -1,11 +1,15 @@
 export const MM_TO_PT = 72 / 25.4;
 
 export function mm(value: number): number {
-  return value * MM_TO_PT;
+  return safeNumber(value, 0) * MM_TO_PT;
 }
 
 export function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
+  const safeMin = safeNumber(min, 0);
+  const safeMax = safeNumber(max, safeMin);
+  const lower = Math.min(safeMin, safeMax);
+  const upper = Math.max(safeMin, safeMax);
+  return Math.max(lower, Math.min(upper, safeNumber(value, lower)));
 }
 
 export function safeNumber(value: unknown, fallback: number): number {
