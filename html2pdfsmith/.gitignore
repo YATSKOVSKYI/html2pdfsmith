@@ -1,3 +1,8 @@
+# Root workspace wrapper only. Nested projects below have their own Git repos.
+# If this directory later becomes a real monorepo, narrow these rules.
+/*
+!/.gitignore
+
 node_modules/
 dist/
 *.log
